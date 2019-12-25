@@ -12,6 +12,7 @@ We will see if DS games as of December 22, 2016 have different average User Scor
 library(ggplot2)
 library(car)
 library(EnvStats) #for Box-Cox transformations
+library(MASS) # for model selecting
 games <- read.csv("Video_Games_Sales_as_at_22_Dec_2016.csv")
 str(games)
 levels(games$Platform)
@@ -108,7 +109,7 @@ L1 <-  boxcox(new.lm.model ,objective.name = "PPCC",optimize = TRUE)$lambda
 L2 <-  boxcox(new.lm.model ,objective.name = "Shapiro-Wilk",optimize = TRUE)$lambda
 L3 <-  boxcox(new.ds$User_Score,objective.name = "Log-Likelihood",optimize = TRUE)$lambda
 
-#create new df with transformed data
+#create new df with transformed data. We will start with QQPlot criteria
 YT <- (new.ds$User_Score^(L1)-1)/L1
 t.data <- data.frame(User_Score = YT, Genre = new.ds$Genre)
 t.model <- lm(User_Score ~ Genre, data = t.data)
@@ -158,7 +159,8 @@ mean(many.perms >= F.OBS)
 new.ds$Rank = rank(new.ds$User_Score, ties = "average")
 SR.2 = var(new.ds$Rank)
 Ri = aggregate(User_Score ~ Genre, data = ds, mean)$Rank
-
+ni = aggregate(User_Score ~ Genre, data = ds,length)$Rank
+ 
 KW.OBS = 1/SR.2*sum(ni*(Ri - (nt+1)/2)^2) #Note, this assumes you calculate ni and Ri above
 R = 3000
 many.perms.KW = sapply(1:R,function(i){
@@ -174,6 +176,32 @@ p.value = mean(many.perms.KW > KW.OBS)
 p.value
 
 #gives same result
+```
+
+### Regression
+```{r}
+#Build a full model first:
+full.model <- lm(User_Score ~ as.factor(Year_of_Release) + Genre + NA_Sales + EU_Sales + JP_Sales + Other_Sales + Global_Sales + Rating, data = ds)
+summary(full.model)
+
+#Now an empty model:
+empty.model = lm(User_Score ~ 1, data = ds)
+
+n = nrow(ds) #gives number of observations
+
+forward.model.AIC = stepAIC(empty.model, scope = list(lower = empty.model, upper= full.model), 
+                            k = 2,direction = "forward", trace = FALSE)
+forward.model.AIC$coefficents
+
+#Use backward criteria with BIC as penalty
+backward.model.BIC = stepAIC(full.model, scope = list(lower = empty.model, upper= full.model),
+                             k = log(n),trace=FALSE,direction = "backward")
+backward.model.BIC$coefficients
+
+my.best.model <- backward.model.BIC
+summary(my.best.model)
+
+#So under this model, year (as a factor), NA Sales, Global Sales, and the given ratings (with one being used as a baseline) are our significant predictor variables for User Score.
 ```
 
 
