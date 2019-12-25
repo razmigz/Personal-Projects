@@ -1,28 +1,33 @@
 ---
 title: "DS Games Analysis"
 author: "Razmig Zeitounian"
-output: html_notebook
+output:
+  html_document:
+    df_print: paged
 ---
 
 We will see if DS games as of December 22, 2016 have different average User Scores based on Genre.
 
-```{r, echo = FALSE, eval = FALSE}
+```{r, echo = FALSE}
 #the data is from the following link:
 #https://www.kaggle.com/rush4ratio/video-game-sales-with-ratings
 library(ggplot2)
 library(car)
 library(EnvStats) #for Box-Cox transformations
 library(MASS) # for model selecting
+library(plotly)
+library(gganimate)
 games <- read.csv("Video_Games_Sales_as_at_22_Dec_2016.csv")
 str(games)
 levels(games$Platform)
 
-#we will look at DS games 
+#we will look at DS games  only
 ds <- subset(games, Platform == "DS", select = -c(Platform)) #drop platform column since we no longer need it
 ds$User_Score <- as.numeric(ds$User_Score) #convert to numeric
 ds <- subset(ds, User_Score >= 8) #we will only look at games with ratings of at least 8
 ```
 
+### Quick Exploration
 ```{r, echo=FALSE}
 ggplot(ds, aes(x=Global_Sales, y=User_Score, color = Genre)) + geom_jitter() + facet_grid(.~Genre)
 #it looks like shooters and rpg's have the best user ratings
@@ -33,18 +38,21 @@ aggregate(User_Score ~ Genre, data = ds, FUN = mean)
 
 #lets compare variances graphically with boxplots
 ggplot(ds, aes(x=Global_Sales, y=User_Score,color=Genre)) + geom_boxplot() + facet_grid(.~Genre)
+#So it suggests we have non-constant variance
 
 avg.by.genre <- aggregate(User_Score ~ Genre, data = ds, FUN = mean)
 ordered.avg.by.genre <- avg.by.genre[order(avg.by.genre$User_Score),]
 
 #plot averages against each other based on genre
-ggplot(avg.by.genre, aes(x=Genre, y=User_Score, color = Genre)) + geom_jitter() + theme(plot.subtitle = element_text(vjust = 1), 
+avg.plot <- ggplot(avg.by.genre, aes(x=Genre, y=User_Score, color = Genre)) + geom_jitter() + theme(plot.subtitle = element_text(vjust = 1), 
     plot.caption = element_text(vjust = 1), 
     panel.grid.major = element_line(linetype = "dashed"), 
     panel.grid.minor = element_line(linetype = "dashed"), 
     plot.title = element_text(family = "serif"), 
     panel.background = element_rect(fill = "mistyrose1"), 
     plot.background = element_rect(fill = "thistle1")) +labs(title = "Average User Score by Genre")
+
+ggplotly(avg.plot)
 ```
 
 Here we will test if there is a significant difference between means for at least one Genre based on User_Score. We have $H_0:$ All Genre averages are the same for DS Games versus $H_A:$ At least two levels in the Genre group have statistically significant different means.
@@ -59,6 +67,7 @@ anova.table
 
 ### Diagnostics
 ```{r, echo=FALSE}
+ds <- subset(ds, User_Score >= 8) #we will only look at games with ratings of at least 8
 #Check for outliers
 nt <-  nrow(ds) #Calculates the total sample size
 a <-  length(unique(ds$Genre)) #Calculates the value of a
@@ -100,28 +109,27 @@ p.val
 boxcox(new.lm.model, objective.name = "PPCC")
 
 #Shapiro-Wilks
-boxcox(new.lm.model, objective.name = "Shapiro-Wilk")
+#boxcox(new.lm.model, objective.name = "Shapiro-Wilk")
 
 #Log-Likelihood
-boxcox(new.ds$User_Score,objective.name = "Log-Likelihood")
+#boxcox(new.ds$User_Score, objective.name = "Log-Likelihood")
 
-L1 <-  boxcox(new.lm.model ,objective.name = "PPCC",optimize = TRUE)$lambda
-L2 <-  boxcox(new.lm.model ,objective.name = "Shapiro-Wilk",optimize = TRUE)$lambda
-L3 <-  boxcox(new.ds$User_Score,objective.name = "Log-Likelihood",optimize = TRUE)$lambda
+L1 <- boxcox(new.lm.model, objective.name = "PPCC", optimize = TRUE)$lambda
 
 #create new df with transformed data. We will start with QQPlot criteria
 YT <- (new.ds$User_Score^(L1)-1)/L1
-t.data <- data.frame(User_Score = YT, Genre = new.ds$Genre)
-t.model <- lm(User_Score ~ Genre, data = t.data)
+
+#t.data <- data.frame(User_Score = YT, Genre = new.ds$Genre)
+#t.model <- lm(User_Score ~ Genre, data = t.data)
 
 #Re-run diagnostics on transformed data
-ei = t.model$residuals
-the.SWtest = shapiro.test(ei)
-the.SWtest
+#ei = t.model$residuals
+#the.SWtest = shapiro.test(ei)
+#the.SWtest
 
-the.BFtest.t.data = leveneTest(User_Score~ Genre, data=t.data, center=median)
-p.val = the.BFtest.t.data[[3]][1]
-p.val
+#the.BFtest.t.data = leveneTest(User_Score~ Genre, data=t.data, center=median)
+#p.val = the.BFtest.t.data[[3]][1]
+#p.val
 #So assumptions still failed
 ```
 
@@ -179,7 +187,7 @@ p.value
 ```
 
 ### Regression
-```{r}
+```{r,echo=F}
 #Build a full model first:
 full.model <- lm(User_Score ~ as.factor(Year_of_Release) + Genre + NA_Sales + EU_Sales + JP_Sales + Other_Sales + Global_Sales + Rating, data = ds)
 summary(full.model)
@@ -188,6 +196,10 @@ summary(full.model)
 empty.model = lm(User_Score ~ 1, data = ds)
 
 n = nrow(ds) #gives number of observations
+
+
+###
+#Use model selection
 
 forward.model.AIC = stepAIC(empty.model, scope = list(lower = empty.model, upper= full.model), 
                             k = 2,direction = "forward", trace = FALSE)
@@ -201,7 +213,14 @@ backward.model.BIC$coefficients
 my.best.model <- backward.model.BIC
 summary(my.best.model)
 
-#So under this model, year (as a factor), NA Sales, Global Sales, and the given ratings (with one being used as a baseline) are our significant predictor variables for User Score.
-```
+#When adjusting for the number of parameters, 15% of our variation is User Score is explained by
+#our predictor variables under this model
 
+#So under this model, year (as a factor), NA Sales, Global Sales, and the given ratings (with one being used as a baseline) are our significant predictor variables for User Score.
+
+plot(my.best.model, col = "blue")
+#since all points are w/in cook's distance, it suggests no outliers here
+
+#finish regression assumptions later; if they fail, use bootstrap
+```
 
