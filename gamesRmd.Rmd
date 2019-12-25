@@ -1,0 +1,179 @@
+---
+title: "DS Games Analysis"
+author: "Razmig Zeitounian"
+output: html_notebook
+---
+
+We will see if DS games as of December 22, 2016 have different average User Scores based on Genre.
+
+```{r, echo = FALSE, eval = FALSE}
+#the data is from the following link:
+#https://www.kaggle.com/rush4ratio/video-game-sales-with-ratings
+library(ggplot2)
+library(car)
+library(EnvStats) #for Box-Cox transformations
+games <- read.csv("Video_Games_Sales_as_at_22_Dec_2016.csv")
+str(games)
+levels(games$Platform)
+
+#we will look at DS games 
+ds <- subset(games, Platform == "DS", select = -c(Platform)) #drop platform column since we no longer need it
+ds$User_Score <- as.numeric(ds$User_Score) #convert to numeric
+ds <- subset(ds, User_Score >= 8) #we will only look at games with ratings of at least 8
+```
+
+```{r, echo=FALSE}
+ggplot(ds, aes(x=Global_Sales, y=User_Score, color = Genre)) + geom_jitter() + facet_grid(.~Genre)
+#it looks like shooters and rpg's have the best user ratings
+
+#view avg score by genre
+aggregate(User_Score ~ Genre, data = ds, FUN = mean)
+
+
+#lets compare variances graphically with boxplots
+ggplot(ds, aes(x=Global_Sales, y=User_Score,color=Genre)) + geom_boxplot() + facet_grid(.~Genre)
+
+avg.by.genre <- aggregate(User_Score ~ Genre, data = ds, FUN = mean)
+ordered.avg.by.genre <- avg.by.genre[order(avg.by.genre$User_Score),]
+
+#plot averages against each other based on genre
+ggplot(avg.by.genre, aes(x=Genre, y=User_Score, color = Genre)) + geom_jitter() + theme(plot.subtitle = element_text(vjust = 1), 
+    plot.caption = element_text(vjust = 1), 
+    panel.grid.major = element_line(linetype = "dashed"), 
+    panel.grid.minor = element_line(linetype = "dashed"), 
+    plot.title = element_text(family = "serif"), 
+    panel.background = element_rect(fill = "mistyrose1"), 
+    plot.background = element_rect(fill = "thistle1")) +labs(title = "Average User Score by Genre")
+```
+
+Here we will test if there is a significant difference between means for at least one Genre based on User_Score. We have $H_0:$ All Genre averages are the same for DS Games versus $H_A:$ At least two levels in the Genre group have statistically significant different means.
+
+```{r,echo=FALSE}
+#create model
+lm.model <- lm(User_Score ~ Genre, data=ds)
+anova.table <- anova(lm.model)
+anova.table
+```
+
+
+### Diagnostics
+```{r, echo=FALSE}
+#Check for outliers
+nt <-  nrow(ds) #Calculates the total sample size
+a <-  length(unique(ds$Genre)) #Calculates the value of a
+SSE <-  sum(ds$ei^2) #Sums and squares the errors (finds SSE)
+MSE <-  SSE/(nt-a) #Finds MSE
+eij.star <-  lm.model$residuals/sqrt(MSE)
+alpha <-  0.05
+t.cutoff <- qt(1-alpha/(2*nt), nt-a)
+#Outliers via studentized/standardized residuals
+rij <- rstandard(lm.model)
+CO.rij <- which(abs(rij) > t.cutoff)
+CO.rij
+length(CO.rij) #gives the number of outliers
+
+#let's create a new df with outliers removed
+outliers <- CO.rij
+new.ds <- ds[-outliers,]
+new.lm.model <- lm(User_Score ~ Genre, data = new.ds)
+
+#make a qqplot to check for normality of errors assumption
+qqnorm(new.lm.model$residuals)
+qqline(new.lm.model$residuals)
+#so it looks like our normality assumption failed; let's make sure with SW Test
+
+ei = new.lm.model$residuals
+the.SWtest = shapiro.test(ei)
+the.SWtest
+#confirms that normality assumptions is not met; let's consider transformations
+
+the.BFtest = leveneTest(ei~ Genre, data= new.ds, center=median)
+p.val = the.BFtest[[3]][1]
+p.val
+#so our constant variance assumption fails as well; another reason to consider transformations
+
+################################################################################################
+### Transformations
+
+#QQplot
+boxcox(new.lm.model, objective.name = "PPCC")
+
+#Shapiro-Wilks
+boxcox(new.lm.model, objective.name = "Shapiro-Wilk")
+
+#Log-Likelihood
+boxcox(new.ds$User_Score,objective.name = "Log-Likelihood")
+
+L1 <-  boxcox(new.lm.model ,objective.name = "PPCC",optimize = TRUE)$lambda
+L2 <-  boxcox(new.lm.model ,objective.name = "Shapiro-Wilk",optimize = TRUE)$lambda
+L3 <-  boxcox(new.ds$User_Score,objective.name = "Log-Likelihood",optimize = TRUE)$lambda
+
+#create new df with transformed data
+YT <- (new.ds$User_Score^(L1)-1)/L1
+t.data <- data.frame(User_Score = YT, Genre = new.ds$Genre)
+t.model <- lm(User_Score ~ Genre, data = t.data)
+
+#Re-run diagnostics on transformed data
+ei = t.model$residuals
+the.SWtest = shapiro.test(ei)
+the.SWtest
+
+the.BFtest.t.data = leveneTest(User_Score~ Genre, data=t.data, center=median)
+p.val = the.BFtest.t.data[[3]][1]
+p.val
+#So assumptions still failed
+```
+
+### Permutation Test
+```{r, echo = F}
+F.OBS = summary(lm(User_Score ~ Genre, data = new.ds))$fstatistic["value"]
+
+set.seed(7)
+permuted.data = new.ds #So we don't overwrite the original data
+permuted.data$Group = sample(permuted.data$Genre, nrow(permuted.data), replace = FALSE) #Permuting the groups
+Fi = summary(lm(User_Score ~ Genre, data = permuted.data))$fstatistic["value"]
+
+#lets permute 3000 times
+R = 3000
+many.perms = sapply(1:R,function(i){
+  permuted.data = new.ds #So we don't overwrite the original data
+  permuted.data$Genre = sample(permuted.data$Genre, nrow(permuted.data), replace = FALSE) #Permuting the groups
+  Fi = summary(lm(User_Score ~ Genre, data = permuted.data))$fstatistic["value"]
+  return(Fi)
+})
+
+hist(many.perms, main = "Distribution for Permuted F values", xlab = "Fi")
+points(y = 0, x = F.OBS, pch = 17)
+
+#Now we can see that if our data was equally likely to be in each group, we would see our test-statistic with probability:
+mean(many.perms >= F.OBS)
+
+
+###
+#Kruskall Wallis
+
+###
+#add a rank column
+
+new.ds$Rank = rank(new.ds$User_Score, ties = "average")
+SR.2 = var(new.ds$Rank)
+Ri = aggregate(User_Score ~ Genre, data = ds, mean)$Rank
+
+KW.OBS = 1/SR.2*sum(ni*(Ri - (nt+1)/2)^2) #Note, this assumes you calculate ni and Ri above
+R = 3000
+many.perms.KW = sapply(1:R,function(i){
+  permuted.data = new.ds
+  permuted.data$Group = sample(permuted.data$Genre, nrow(permuted.data), replace = FALSE) #Permuting the groups
+  SR.2 = var(permuted.data$Rank)
+  ni = aggregate(User_Score ~ Genre, data = permuted.data,length)$Rank
+  Ri = aggregate(User_Score ~ Genre, data = permuted.data, mean)$Rank
+  KW.i= 1/SR.2*sum(ni*(Ri - (nt+1)/2)^2) 
+  return(KW.i)
+})
+p.value = mean(many.perms.KW > KW.OBS)
+p.value
+
+#gives same result
+```
+
+
