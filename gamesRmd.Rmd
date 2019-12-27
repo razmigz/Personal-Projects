@@ -40,16 +40,18 @@ aggregate(User_Score ~ Genre, data = ds, FUN = mean)
 
 
 #lets compare variances graphically with boxplots
-ggplot(ds, aes(x=Genre, y=User_Score,color = Genre)) + geom_boxplot() + theme(legend.position = "none") + theme(plot.subtitle = element_text(vjust = 1), 
+boxplot.genre <- ggplot(ds, aes(x=Genre, y=User_Score,color = Genre)) + geom_boxplot() + theme(legend.position = "none") + theme(plot.subtitle = element_text(vjust = 1), 
     plot.caption = element_text(vjust = 1), 
     panel.grid.major = element_line(linetype = "blank"), 
     panel.background = element_rect(fill = "powderblue"), 
     plot.background = element_rect(fill = "orchid4")) +labs(title = "Boxplots of User Score vs Genre")
+ggplotly(boxplot.genre)
 #So it suggests we have non-constant variance
 
 avg.by.genre <- aggregate(User_Score ~ Genre, data = ds, FUN = mean)
 #let's put this in order now
 ordered.avg.by.genre <- avg.by.genre[order(avg.by.genre$User_Score),]
+ordered.avg.by.genre
 
 #plot averages against each other based on genre
 avg.plot <- ggplot(avg.by.genre, aes(x=Genre, y=User_Score, color = Genre)) + geom_jitter() + theme(plot.subtitle = element_text(vjust = 1), 
