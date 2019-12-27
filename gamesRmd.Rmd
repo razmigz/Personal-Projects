@@ -33,8 +33,7 @@ ds <- subset(ds, User_Score >= 8) #we will only look at games with ratings of at
 ggplot(ds, aes(x=Global_Sales, y=User_Score, color = Genre)) + geom_jitter(alpha=.3) + facet_grid(.~Genre) + theme(legend.position = "none")
 
 #make above plot easier to see
-ggplot(ds, aes(x=Global_Sales, y=User_Score, color = Genre)) + geom_jitter(alpha=.3) + facet_grid(Genre~.) + theme(legend.position = "none") + scale_x_continuous(limits=c(0,10))
- 
+ggplot(ds, aes(x=Global_Sales, y=User_Score, color = Genre)) + geom_jitter(alpha=.3) + facet_grid(Genre~.) + theme(legend.position = "none") + ggplot(ds, aes(x=Global_Sales, y=User_Score, color = Genre)) + geom_jitter(alpha=.3) + theme(legend.position = "none") + scale_x_discrete(limits=c(0:10)) 
 #view avg score by genre
 aggregate(User_Score ~ Genre, data = ds, FUN = mean)
 
@@ -66,6 +65,7 @@ ggplotly(avg.plot)
 ```
 
 Here we will test if there is a significant difference between means for at least one Genre based on User_Score. We have $H_0:$ All Genre averages are the same for DS Games versus $H_A:$ At least two levels in the Genre group have statistically significant different means.
+
 
 ```{r,echo=FALSE}
 #create model
