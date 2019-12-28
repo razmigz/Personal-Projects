@@ -1,0 +1,118 @@
+---
+title: "R Notebook"
+output:
+  html_document:
+    df_print: paged
+---
+
+This is an [R Markdown](http://rmarkdown.rstudio.com) Notebook. When you execute code within the notebook, the results appear beneath the code. 
+
+Try executing this chunk by clicking the *Run* button within the chunk or by placing your cursor inside it and pressing *Ctrl+Shift+Enter*. 
+
+Add a new chunk by clicking the *Insert Chunk* button on the toolbar or by pressing *Ctrl+Alt+I*.
+
+When you save the notebook, an HTML file containing the code and output will be saved alongside it (click the *Preview* button or press *Ctrl+Shift+K* to preview the HTML file).
+
+The preview shows you a rendered HTML copy of the contents of the editor. Consequently, unlike *Knit*, *Preview* does not run any R code chunks. Instead, the output of the chunk when it was last run in the editor is displayed.
+
+
+### Pokemon Data
+```{r, echo=FALSE}
+#link: https://www.kaggle.com/abcsds/pokemon
+pokemon <- read.csv("Pokemon.csv")
+
+library(ggplot2)
+library(car)
+library(EnvStats) #for Box-Cox transformations
+library(MASS) # for model selecting
+library(plotly)
+library(gganimate)
+library(knitr)
+library(corrgram)
+
+#we must convert Generation into a factor
+pokemon$Generation <- as.factor(pokemon$Generation)
+str(pokemon)
+#notice that mega pokemon are counted as their own (e.g., AbomasnowMega)
+
+kable(head(pokemon,15))
+```
+
+### Tables of Types
+```{r}
+type.table <- table(pokemon$Type.1, pokemon$Type.2)
+kable(type.table)
+
+t1.table <- table(pokemon$Type.1)
+kable(t1.table)
+
+t2.table <- table(pokemon$Type.2)
+kable(t2.table)
+
+```
+Above, we have a table showing the number of pokemon with two types, type 1, and type 2.
+
+## Plots and Summary Stats
+```{r,echo=FALSE}
+#see if generations have different numbers of Type 1's and base stat totals
+ggplot(pokemon, aes(Type.1, Total, color = Generation)) + geom_boxplot()
+
+#now type 2:
+ggplot(pokemon, aes(Type.2, Total, color = Generation)) + geom_boxplot()
+
+#view avg BST by generation in a plot
+bst.by.gen <- aggregate(Total ~ Generation, data = pokemon, FUN = mean)
+bst.by.gen.plot <- ggplot(bst.by.gen, aes(x=Generation, y=Total, group = 1)) + geom_point(col = "white") + geom_line(color="red")+ theme(plot.subtitle = element_text(vjust = 1), 
+    plot.caption = element_text(vjust = 1), 
+    panel.grid.major = element_line(linetype = "blank"), 
+    panel.grid.minor = element_line(linetype = "blank"), 
+    panel.background = element_rect(fill = "black"), 
+    plot.background = element_rect(fill = "red")) + ylab("Average BST") + ggtitle("Average BST by Generation")
+
+bst.by.gen.plot
+
+#interactive version:
+ggplotly(bst.by.gen.plot)
+
+#
+ggplot(pokemon, aes(Total, color=Generation, fill=Generation)) + geom_histogram()
+
+```
+### Histograms for each stat by Generation
+```{r}
+#make histograms
+
+#hp
+hist.hp <- ggplot(pokemon, aes(x=HP)) + geom_histogram(col = "black", fill = "red") + facet_grid(.~Generation) + ggtitle("Distribution of HP stat by Generation")
+
+#atk
+hist.atk <- ggplot(pokemon, aes(x=Attack)) + geom_histogram(col = "red", fill = "blue") + facet_grid(.~Generation) + ggtitle("Distribution of Attack stat by Generation")
+
+#def
+hist.def <- ggplot(pokemon, aes(x=Defense)) + geom_histogram(col = "blue", fill = "aquamarine") + facet_grid(.~Generation) + ggtitle("Distribution of Defense stat by Generation")
+
+#sp atk
+hist.spatk <- ggplot(pokemon, aes(x=Sp..Atk)) + geom_histogram(col = "grey", fill = "yellow") + facet_grid(.~Generation) + ggtitle("Distribution of Special Attack stat by Generation")
+
+#sp def
+hist.spdef <- ggplot(pokemon, aes(x=Sp..Def)) + geom_histogram(col = "blue", fill = "royalblue2") + facet_grid(.~Generation) + ggtitle("Distribution of Special Defense stat by Generation")
+
+#spd
+hist.spd <- ggplot(pokemon, aes(x=Speed)) + geom_histogram(col = "yellow", fill = "blue") + facet_grid(.~Generation) + ggtitle("Distribution of Speed stat by Generation")
+
+#######
+ggplotly(hist.hp)
+ggplotly(hist.atk)
+ggplotly(hist.def)
+ggplotly(hist.spatk)
+ggplotly(hist.spdef)
+ggplotly(hist.spd)
+#notice how they are all approximately normal and may contain some outliets
+```
+### Base Stat Total (BST) Distribution
+```{r}
+hist.bst <- ggplot(pokemon, aes(x=Total)) + geom_histogram(col = "green", fill = "purple") + facet_grid(.~Generation) + ggtitle("Distribution of Speed stat by Generation")
+
+ggplotly(hist.bst)
+```
+The final density plot suggests Legendary Pokemon have higher BST's than non-legendaries.
