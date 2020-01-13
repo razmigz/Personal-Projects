@@ -183,16 +183,6 @@ These results mean that although our equal variance condition is met for any rea
 #check skew of response
 skewness(pokemon$Total)
 
-
-#use QQplot transformation
-boxcox(pokemon.lm.model, objective.name = "PPCC")
-pokemon.lm.model <- lm(Total ~ Generation, data = pokemon)
-L1 <- boxcox(pokemon.lm.model, objective.name = "PPCC", optimize = TRUE)$lambda
-YT <- (pokemon$Total^(L1)-1)/L1
-t.data <-  data.frame(Total = YT, Generation = pokemon$Generation)
-t.model <-  lm(Total~ Legendary,data = t.data)
-
-
 #try square rooting the Response Variable
 transform.pok <- lm(sqrt(Total) ~ Generation, data = pokemon)
 plot(transform.pok)
