@@ -1,34 +1,25 @@
 ---
 title: "R Notebook"
+author: "Razmig Zeitounian"
 output:
   html_document:
     df_print: paged
 ---
 
-This is an [R Markdown](http://rmarkdown.rstudio.com) Notebook. When you execute code within the notebook, the results appear beneath the code. 
-
-Try executing this chunk by clicking the *Run* button within the chunk or by placing your cursor inside it and pressing *Ctrl+Shift+Enter*. 
-
-Add a new chunk by clicking the *Insert Chunk* button on the toolbar or by pressing *Ctrl+Alt+I*.
-
-When you save the notebook, an HTML file containing the code and output will be saved alongside it (click the *Preview* button or press *Ctrl+Shift+K* to preview the HTML file).
-
-The preview shows you a rendered HTML copy of the contents of the editor. Consequently, unlike *Knit*, *Preview* does not run any R code chunks. Instead, the output of the chunk when it was last run in the editor is displayed.
-
-
 ### Pokemon Data
-```{r, echo=FALSE}
+```{r, message=FALSE}
 #link: https://www.kaggle.com/abcsds/pokemon
 pokemon <- read.csv("Pokemon.csv")
 
 library(ggplot2)
-library(car)
+library(car) #gives LeveneTest
 library(EnvStats) #for Box-Cox transformations
 library(MASS) # for model selecting
 library(plotly)
-library(gganimate)
 library(knitr)
-library(corrgram)
+library(forcats)
+library(rcompanion)
+library(moments)
 
 #we must convert Generation into a factor
 pokemon$Generation <- as.factor(pokemon$Generation)
@@ -40,6 +31,7 @@ kable(head(pokemon,15))
 
 ### Tables of Types
 ```{r}
+#we make tables to get an idea of the amount of pokemon by each type
 type.table <- table(pokemon$Type.1, pokemon$Type.2)
 kable(type.table)
 
@@ -48,17 +40,26 @@ kable(t1.table)
 
 t2.table <- table(pokemon$Type.2)
 kable(t2.table)
-
 ```
-Above, we have a table showing the number of pokemon with two types, type 1, and type 2.
+Above, we have a table showing the number of pokemon with an interaction between Type 1 and Type 2, type 1, and type 2.
 
 ## Plots and Summary Stats
-```{r,echo=FALSE}
+```{r}
 #see if generations have different numbers of Type 1's and base stat totals
-ggplot(pokemon, aes(Type.1, Total, color = Generation)) + geom_boxplot()
+ggplot(pokemon, aes(Type.1, Total, color = Generation)) + geom_boxplot() + theme(plot.subtitle = element_text(vjust = 1), 
+    plot.caption = element_text(vjust = 1), 
+    panel.grid.major = element_line(linetype = "blank"), 
+    panel.background = element_rect(fill = "thistle1"), 
+    plot.background = element_rect(fill = "cyan2")) +labs(title = "Stat Total by Type 1 and Generation", 
+    x = "Type 1")
 
 #now type 2:
-ggplot(pokemon, aes(Type.2, Total, color = Generation)) + geom_boxplot()
+ggplot(pokemon, aes(Type.2, Total, color = Generation)) + geom_boxplot() + theme(plot.subtitle = element_text(vjust = 1), 
+    plot.caption = element_text(vjust = 1), 
+    panel.grid.major = element_line(linetype = "blank"), 
+    panel.background = element_rect(fill = "rosybrown1"), 
+    plot.background = element_rect(fill = "aquamarine1")) +labs(title = "Stat Total by Type 2 and Generation", 
+    x = "Type 2")
 
 #view avg BST by generation in a plot
 bst.by.gen <- aggregate(Total ~ Generation, data = pokemon, FUN = mean)
@@ -75,8 +76,26 @@ bst.by.gen.plot
 ggplotly(bst.by.gen.plot)
 
 #
-ggplot(pokemon, aes(Total, color=Generation, fill=Generation)) + geom_histogram()
+ggplot(pokemon, aes(Total, color=Generation, fill=Generation)) + geom_histogram() + theme(plot.subtitle = element_text(vjust = 1), 
+    plot.caption = element_text(vjust = 1), 
+    panel.background = element_rect(fill = "honeydew1"), 
+    plot.background = element_rect(fill = "lightsteelblue1"))
 
+### Plot frequency of each type
+#fct_infreq orders from least to greatest for type I
+ggplot(pokemon, aes(x=fct_infreq(Type.1))) + geom_bar(fill = "aquamarine", color = "red") + theme(plot.subtitle = element_text(vjust = 1), 
+    plot.caption = element_text(vjust = 1), 
+    panel.grid.minor = element_line(linetype = "blank"), 
+    panel.background = element_rect(fill = "thistle1"), 
+    plot.background = element_rect(fill = "orange1"))+labs(title = "Frequency of each Type I", 
+    x = "Type I", y = "Count")
+
+ggplot(pokemon, aes(x=fct_infreq(Type.2))) + geom_bar(fill = "aquamarine", color = "red") + theme(plot.subtitle = element_text(vjust = 1), 
+    plot.caption = element_text(vjust = 1), 
+    panel.grid.minor = element_line(linetype = "blank"), 
+    panel.background = element_rect(fill = "ivory"), 
+    plot.background = element_rect(fill = "tomato2"))+labs(title = "Frequency of each Type II", 
+    x = "Type II", y = "Count")+labs(caption = "*Note that the empty label means no secondary type")
 ```
 ### Histograms for each stat by Generation
 ```{r}
@@ -111,8 +130,137 @@ ggplotly(hist.spd)
 ```
 ### Base Stat Total (BST) Distribution
 ```{r}
-hist.bst <- ggplot(pokemon, aes(x=Total)) + geom_histogram(col = "green", fill = "purple") + facet_grid(.~Generation) + ggtitle("Distribution of Speed stat by Generation")
+hist.bst <- ggplot(pokemon, aes(x=Total)) + geom_histogram(col = "green", fill = "purple") + facet_grid(.~Generation) + ggtitle("Distribution of Base Stat Total (BST) by Generation") + theme(plot.subtitle = element_text(vjust = 1), 
+    plot.caption = element_text(vjust = 1), 
+    panel.background = element_rect(fill = "honeydew1"), 
+    plot.background = element_rect(fill = "antiquewhite"))
 
 ggplotly(hist.bst)
 ```
-The final density plot suggests Legendary Pokemon have higher BST's than non-legendaries.
+The histogram suggests BST is approximately normally distributed across all generations.
+
+### One-Way ANOVA on BST using Generation
+```{r}
+pokemon.lm.model <- lm(Total ~ Generation, data = pokemon)
+pokemon.aov <- aov(pokemon.lm.model)
+summary(pokemon.aov)
+#so no significant difference between at least one generation for BST
+plot(pokemon.aov)
+#our residuals look random, errors look normal, so this is good
+
+
+
+#########################################
+#One-Way ANOVA on Legendary and BST
+legendary.model <- lm(Total ~ Legendary, data = pokemon)
+legendary.aov <- aov(legendary.model)
+summary(legendary.aov)
+
+#This suggest legendaries have a higher BST than non-legendaries
+```
+### Visualize errors under the model
+```{r}
+ggplot(pokemon, aes(pokemon.lm.model$residuals)) + geom_histogram(color = "seagreen2") + xlab("Residuals")
+```
+This plot suggests our errors are skewed left, which violates the normality assumption of the residuals.
+
+### Diagnostics/Formal Assumption Testing
+```{r}
+resid <- pokemon.lm.model$residuals
+shapiro.wilk.test <- shapiro.test(resid)
+shapiro.wilk.test
+#so normality assumption is violated
+
+brown.fors.test <- leveneTest(Total ~ Generation, data = pokemon, center = median)
+brown.fors.test
+#so equal variance by group condition is met
+```
+
+These results mean that although our equal variance condition is met for any reasonable value of $\alpha$, our errors are not approximately normally distributed. Therefore, we will consider transforming our variables to satisfy ANOVA assumptions.
+
+### Transformations
+```{r}
+#check skew of response
+skewness(pokemon$Total)
+
+
+#use QQplot transformation
+boxcox(pokemon.lm.model, objective.name = "PPCC")
+pokemon.lm.model <- lm(Total ~ Generation, data = pokemon)
+L1 <- boxcox(pokemon.lm.model, objective.name = "PPCC", optimize = TRUE)$lambda
+YT <- (pokemon$Total^(L1)-1)/L1
+t.data <-  data.frame(Total = YT, Generation = pokemon$Generation)
+t.model <-  lm(Total~ Legendary,data = t.data)
+
+
+#try square rooting the Response Variable
+transform.pok <- lm(sqrt(Total) ~ Generation, data = pokemon)
+plot(transform.pok)
+
+resid2 <- transform.pok$residuals
+shapiro.wilk.test2 <- shapiro.test(resid2)
+shapiro.wilk.test2
+#so assumptions not met
+
+#now try log(10)
+transform.pok2 <- lm(log10(Total) ~ Generation, data = pokemon)
+plot(transform.pok2)
+
+resid3 <- transform.pok2$residuals
+shapiro.wilk.test3 <- shapiro.test(resid3)
+shapiro.wilk.test3
+#assumptions not met
+```
+Since transformations did not satisfy ANOVA assumptions, we will use non-parametric methods for our hypothesis test.
+
+### Non-Parametric Testing
+```{r}
+#add a rank column
+pokemon$Rank = rank(pokemon$Total, ties = "average")
+
+#get F-stat
+F.OBS = summary(lm(Total ~ Generation, data = pokemon))$fstatistic["value"]
+
+permuted.data = pokemon #So we don't overwrite the original data
+permuted.data$Generation = sample(permuted.data$Generation, nrow(permuted.data), replace = FALSE) #Permuting the groups
+Fi = summary(lm(Total ~ Generation, data = permuted.data))$fstatistic["value"]
+
+#we will permute the data 3000 times
+R = 3000
+many.perms = sapply(1:R,function(i){
+  permuted.data = pokemon #So we don't overwrite the original data
+  permuted.data$Generation = sample(permuted.data$Generation, nrow(permuted.data), replace = FALSE) #Permuting the groups
+  Fi = summary(lm(Total ~ Generation, data = permuted.data))$fstatistic["value"]
+  return(Fi)
+})
+
+hist(many.perms, main = "Distribution for Permuted F values", xlab = "Fi")
+points(y = 0, x = F.OBS, pch = 17)
+#we have a distribution that is skewed right
+
+#get p-val:
+mean(many.perms >= F.OBS)
+
+#try w/ Kruskall-Wallis test to compare:
+
+nt <- nrow(pokemon)
+Ri <- aggregate(Rank ~ Generation, data = pokemon, mean)$Rank
+SR.2 = var(pokemon$Rank)
+ni = aggregate(Total ~ Generation, data = pokemon, length)$Total
+
+KW.OBS = 1/SR.2*sum(ni*(Ri - (nt+1)/2)^2) #Note, this assumes you calculate ni and Ri above
+R = 3000
+many.perms.KW = sapply(1:R,function(i){
+  permuted.data = pokemon #So we don't overwrite the original data
+  permuted.data$Generation = sample(permuted.data$Generation, nrow(permuted.data), replace = FALSE) #Permuting the groups
+  SR.2 = var(permuted.data$Rank)
+  ni = aggregate(Rank ~ Generation, data = permuted.data,length)$Rank
+  Ri = aggregate(Rank ~ Generation, data = permuted.data,mean)$Rank
+  KW.i= 1/SR.2*sum(ni*(Ri - (nt+1)/2)^2) 
+  return(KW.i)
+})
+#p-val for KW:
+p.value = mean(many.perms.KW > KW.OBS)
+p.value
+```
+Both of these non-parametric tests lead to the conclusion that we cannot conclude the distribution of total (BST) is different for at least one generation.
