@@ -243,20 +243,23 @@ ui <- fluidPage(
 server <- function(input, output, session) {
     #######################################################################################################
     ## tab 1
-    
+    chosen.pok <- reactive({
+      # save the inputted pokemon and convert it to a string to get its stats using the link below!
+      name.of.pokemon <- input$pokemon %>% str_to_lower()
+      pokemon <- str_glue("https://pokeapi.co/api/v2/pokemon/{name}", name = toString(name.of.pokemon))
+      pok.req <- GET(pokemon)
+      # make sure it works
+      stop_for_status(pok.req)
+      pok.json <- content(pok.req, as = "text", encoding = "UTF-8")
+      chosen.pok <- fromJSON(pok.json)
+    }
+    )
     # print a summary stat table of the chosen pokemon
     output$Pokemon <- DT::renderDataTable({
         # save the inputted pokemon and convert it to a string to get its stats using the link below!
-        name.of.pokemon <- input$pokemon %>% str_to_lower()
-        pokemon <- str_glue("https://pokeapi.co/api/v2/pokemon/{name}", name = toString(name.of.pokemon))
-        pok.req <- GET(pokemon)
-        # make sure it works
-        stop_for_status(pok.req)
-        pok.json <- content(pok.req, as = "text", encoding = "UTF-8")
-        chosen.pok <- fromJSON(pok.json)
         stat.name <- c("Speed", "Special Defense", "Special Attack", "Defense", "Attack", "HP")
         # give a tibble which shows each stat and what it is
-        stat.table <- chosen.pok$stats %>%
+        stat.table <- chosen.pok()$stats %>%
             select(base_stat) %>%
             cbind(c(
                 "Speed", "Special Defense", "Special Attack",
@@ -275,37 +278,23 @@ server <- function(input, output, session) {
     ######
     # set up images of pokemon for user to visualize which pokemon they picked
     output$pic_front <- renderPlot({
-        name.of.pokemon <- input$pokemon %>% str_to_lower()
-        pokemon <- str_glue("https://pokeapi.co/api/v2/pokemon/{name}", name = toString(name.of.pokemon))
-        pok.req <- GET(pokemon)
-        # make sure it works
-        stop_for_status(pok.req)
-        pok.json <- content(pok.req, as = "text", encoding = "UTF-8")
-        chosen.pok <- fromJSON(pok.json)
         # plot front sprite of pokemon
         title <- sprintf(
             "%s",
             input$pokemon
         )
-        im <- load.image(chosen.pok$sprites$front_default[1])
+        im <- load.image(chosen.pok()$sprites$front_default[1])
         plot(im, xaxt = "n", ann = FALSE, axes = F)
         plot(im, yaxt = "n", ann = FALSE, axes = F)
         title(main = title)
     })
     output$shiny_front <- renderPlot({
-        name.of.pokemon <- input$pokemon %>% str_to_lower()
-        pokemon <- str_glue("https://pokeapi.co/api/v2/pokemon/{name}", name = toString(name.of.pokemon))
-        pok.req <- GET(pokemon)
-        # make sure it works
-        stop_for_status(pok.req)
-        pok.json <- content(pok.req, as = "text", encoding = "UTF-8")
-        chosen.pok <- fromJSON(pok.json)
         # plot shiny front sprite of pokemon
         title <- sprintf(
             "Shiny %s",
             input$pokemon
         )
-        im <- load.image(chosen.pok$sprites$front_shiny[1])
+        im <- load.image(chosen.pok()$sprites$front_shiny[1])
         plot(im, xaxt = "n", ann = FALSE, axes = F)
         plot(im, yaxt = "n", ann = FALSE, axes = F)
         title(main = title)
@@ -314,16 +303,9 @@ server <- function(input, output, session) {
     # plot stat values for each stat
     output$plt <- renderPlot({
         # make a plot
-        name.of.pokemon <- input$pokemon %>% str_to_lower()
-        pokemon <- str_glue("https://pokeapi.co/api/v2/pokemon/{name}", name = toString(name.of.pokemon))
-        pok.req <- GET(pokemon)
-        # make sure it works
-        stop_for_status(pok.req)
-        pok.json <- content(pok.req, as = "text", encoding = "UTF-8")
-        chosen.pok <- fromJSON(pok.json)
         stat.name <- c("speed", "special defense", "special-attack", "defense", "attack", "hp")
         # give a tibble which shows each stat and what it is
-        stat.table <- chosen.pok$stats %>%
+        stat.table <- chosen.pok()$stats %>%
             select(base_stat) %>%
             cbind(c(
                 "speed", "special defense", "special-attack",
@@ -366,42 +348,28 @@ server <- function(input, output, session) {
     })
     
     output$type <- renderPrint({
-        name.of.pokemon <- input$pokemon %>% str_to_lower()
-        pokemon <- str_glue("https://pokeapi.co/api/v2/pokemon/{name}", name = toString(name.of.pokemon))
-        pok.req <- GET(pokemon)
-        # make sure it works
-        stop_for_status(pok.req)
-        pok.json <- content(pok.req, as = "text", encoding = "UTF-8")
-        chosen.pok <- fromJSON(pok.json)
         # say which type or types depending on if it has 1 or 2 types total
-        if (length(chosen.pok$types$type$name) == 1) {
-            cat(toTitleCase(chosen.pok$name), "is a", toTitleCase(chosen.pok$types$type$name[1]), "type Pokemon")
+        if (length(chosen.pok()$types$type$name) == 1) {
+            cat(toTitleCase(chosen.pok()$name), "is a", toTitleCase(chosen.pok()$types$type$name[1]), "type Pokemon")
         } else {
             cat(
-                toTitleCase(chosen.pok$name), "is a", toTitleCase(chosen.pok$types$type$name[1]), "and",
-                toTitleCase(chosen.pok$types$type$name[2]), "type Pokemon"
+                toTitleCase(chosen.pok()$name), "is a", toTitleCase(chosen.pok()$types$type$name[1]), "and",
+                toTitleCase(chosen.pok()$types$type$name[2]), "type Pokemon"
             )
         }
     })
     
     output$Abilities <- renderPrint({
-        name.of.pokemon <- input$pokemon %>% str_to_lower()
-        pokemon <- str_glue("https://pokeapi.co/api/v2/pokemon/{name}", name = toString(name.of.pokemon))
-        pok.req <- GET(pokemon)
-        # make sure it works
-        stop_for_status(pok.req)
-        pok.json <- content(pok.req, as = "text", encoding = "UTF-8")
-        chosen.pok <- fromJSON(pok.json)
-        abilities <- chosen.pok$abilities$ability$name
+        abilities <- chosen.pok()$abilities$ability$name
         # check for number of abilities for grammar purposes and tell user what abilities the pokemon can get;
         # they can have two or three abilities, so we must account for those cases
-        if ((length(chosen.pok$abilities$ability$name)) == 1) {
-            cat(toTitleCase(chosen.pok$name), "has the ability", toTitleCase(chosen.pok$abilities$ability$name))
+        if ((length(chosen.pok()$abilities$ability$name)) == 1) {
+            cat(toTitleCase(chosen.pok()$name), "has the ability", toTitleCase(chosen.pok()$abilities$ability$name))
         }
         else if (is.na(abilities[3]) == TRUE) {
             ability1 <- abilities[1]
             ability2 <- abilities[2]
-            cat(c(toTitleCase(chosen.pok$name), paste0(
+            cat(c(toTitleCase(chosen.pok()$name), paste0(
                 "can have the following abilites: ", toTitleCase(ability1), " and ",
                 toTitleCase(ability2)
             )))
@@ -409,7 +377,7 @@ server <- function(input, output, session) {
             ability1 <- abilities[1]
             ability2 <- abilities[2]
             ability3 <- abilities[3]
-            cat(c(toTitleCase(chosen.pok$name), paste0(
+            cat(c(toTitleCase(chosen.pok()$name), paste0(
                 "can have the following abilites: ", toTitleCase(ability1), ", ",
                 toTitleCase(ability2), ", and ", toTitleCase(ability3)
             )))
