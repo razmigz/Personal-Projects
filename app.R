@@ -257,13 +257,12 @@ server <- function(input, output, session) {
     # print a summary stat table of the chosen pokemon
     output$Pokemon <- DT::renderDataTable({
         # save the inputted pokemon and convert it to a string to get its stats using the link below!
-        stat.name <- c("Speed", "Special Defense", "Special Attack", "Defense", "Attack", "HP")
+        stat.name <- c("HP", "Attack", "Defense", "Special Attack", "Special Defense", "Speed")
         # give a tibble which shows each stat and what it is
         stat.table <- chosen.pok()$stats %>%
             select(base_stat) %>%
             cbind(c(
-                "Speed", "Special Defense", "Special Attack",
-                "Defense", "Attack", "HP"
+              "HP", "Attack", "Defense", "Special Attack", "Special Defense", "Speed"
             )) %>%
             tibble() %>%
             # make it easier to read by putting stat name before content
@@ -303,13 +302,12 @@ server <- function(input, output, session) {
     # plot stat values for each stat
     output$plt <- renderPlot({
         # make a plot
-        stat.name <- c("speed", "special defense", "special-attack", "defense", "attack", "hp")
+      stat.name <- c("HP", "Attack", "Defense", "Special Attack", "Special Defense", "Speed")
         # give a tibble which shows each stat and what it is
         stat.table <- chosen.pok()$stats %>%
             select(base_stat) %>%
             cbind(c(
-                "speed", "special defense", "special-attack",
-                "defense", "attack", "hp"
+              "HP", "Attack", "Defense", "Special Attack", "Special Defense", "Speed"
             )) %>%
             tibble() %>%
             # make it easier to read by putting stat name before content
