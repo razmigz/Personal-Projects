@@ -12,10 +12,9 @@ knitr::opts_chunk$set(echo = TRUE)
 We start by importing libraries and the data.
 Data source: https://www.kaggle.com/karangadiya/fifa19
 
-```{r}
+```{r, message=FALSE, warning=FALSE}
 library(tidyverse)
 library(countrycode)
-library(hablar)
 library(readr)
 
 fifa19data <- read_csv("C:/Users/razmi/OneDrive/Desktop/KaggleExploration/fifa19data.csv")
@@ -52,10 +51,28 @@ new.weight <- fifa19data %>%
   mutate(Weight2 = .*1) %>% 
   select(Weight2)
 
-#note: (weight2 is in lbs units) and (wage2 & value2 are in Euros)
-(fifa19data <- fifa19data %>% 
-  cbind(c(new.value, new.wage, new.weight)) %>% 
-  select(-c(Value, Wage, Weight)))
+#create a function to split up feet and inches, and then convert them to inches
+col.to.split <- fifa19data$Height
+height.calc <- function(col.to.split){
+   split.height <- strsplit(col.to.split, "'")[1]
+   #need to treat each part as a number
+   feet <- as.numeric(split.height[[1]][1])
+   feet.to.inches <- as.numeric(feet*12)
+   inches <- as.numeric(split.height[[1]][2])
+   height.inches <- as.numeric(feet.to.inches + inches)
+   return(height.inches)
+   }
+
+#run function to create a new column to add later; it gives height in inches
+height.inches <- unlist(lapply(fifa19data$Height, FUN = height.calc)) %>% 
+  tibble() %>% 
+  rename("HeightInch" = ".") 
+
+#note: (weight2 is in lbs units) and (wage2 & value2 are in Euros); update df w/ new columns
+fifa19data <- cbind(height.inches, new.value, new.wage, new.weight, fifa19data) %>% 
+  select(-c(Value, Wage, Weight, Height))
+
+glimpse(fifa19data)
 
 #see link: https://statisticsglobe.com/convert-data-frame-column-to-numeric-in-r
 
@@ -85,6 +102,7 @@ hist +
   geom_vline(aes(xintercept=overall.mean), linetype = "dashed") +
   geom_text(aes(0, overall.mean, label = paste0("Overall mean: ", prettyNum(overall.mean)), vjust = -15.5, hjust = -.3))
 ```
+
 As we can see above, the $Overall$ statistic is approximately normally distributed. We will investigate to see if region has an effect on this as well.
 
 ```{r}
@@ -106,6 +124,15 @@ ggplot(df, aes(Overall)) +
   ggtitle("Distribution of Overall Statistic, by Continent") + 
   geom_vline(data=mean.by.region, aes(xintercept=mean_overall)) + 
   theme(axis.text.x = element_text(angle = 90, vjust = 0.5, hjust=1)) 
+
+#now as boxplot
+ggplot(df, aes(continent, Overall)) +
+  geom_boxplot(fill = "yellow", col = "royalblue") + 
+  theme(axis.text.x = element_text(angle = 90, vjust = 0.5, hjust=1)) + 
+  ggtitle("Boxplot of Overall Statistic, by Continent") +
+  xlab("Continent")
 ```
+
+We can see that South Asian players have the lowest average Overall stat and Latin American & Carribean players have the highest Overall stat. The variances seem roughly equal for all continents, with the exception of South Asia, which has the lowest variance. We also see that Europe and Latin America/Carribean have more outliers than other regions, which suggests the best and worst players reside in these regions.
 
 
