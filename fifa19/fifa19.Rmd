@@ -2,7 +2,9 @@
 title: "fifa19"
 author: "Razmig Zeitounian"
 date: "6/22/2020"
-output: html_document
+output:
+  pdf_document: default
+  html_document: default
 ---
 
 ```{r setup, include=FALSE}
@@ -10,9 +12,9 @@ knitr::opts_chunk$set(echo = TRUE)
 ```
 
 We start by importing libraries and the data.
-Data source: https://www.kaggle.com/karangadiya/fifa19
+[Click Here for Data source](https://www.kaggle.com/karangadiya/fifa19)
 
-```{r, message=FALSE, warning=FALSE}
+```{r prep fifa19-1, message=FALSE, warning=FALSE}
 library(tidyverse)
 library(countrycode)
 library(readr)
@@ -72,29 +74,41 @@ height.inches <- unlist(lapply(fifa19data$Height, FUN = height.calc)) %>%
 fifa19data <- cbind(height.inches, new.value, new.wage, new.weight, fifa19data) %>% 
   select(-c(Value, Wage, Weight, Height))
 
-glimpse(fifa19data)
+#https://stackoverflow.com/questions/7680959/convert-type-of-multiple-columns-of-a-dataframe-at-once
 
-#see link: https://statisticsglobe.com/convert-data-frame-column-to-numeric-in-r
+#function changes data types 
+convert.magic <- function(obj,types){
+    for (i in 1:length(obj)){
+        FUN <- switch(types[i],character = as.character, 
+                                   numeric = as.numeric, 
+                                   factor = as.factor)
+        obj[,i] <- FUN(obj[,i])
+    }
+    obj
+}
 
-#specify columns to convert
-to.factor <- c(3, 8, 9, 10, 11, 12, 13, 15, 16)   
-
-fifa19data[ , to.factor] <- apply(fifa19data[ , to.factor], 2,
-                    function(x) as.factor(as.character(x)))
-
-sapply(fifa19data, class)
+out <- convert.magic(fifa19data,c('numeric','numeric','numeric',
+                                  'numeric', 'character', 'factor',
+                                  'factor', 'numeric', 'numeric',
+                                  'factor', 'numeric', 'factor',
+                                  'factor', 'factor', 'factor',
+                                  'factor', 'factor', 'factor', 
+                                  'factor', 'factor', 'character',
+                                  'factor'))
 ```
 
 We are interested in what factors can determine overall rating. Therefore, we will start off by making a histogram
 of what will be our response variable in this project.
 
-```{r}
+```{r Overall Distribution}
 #get overall statistic's mean to use to as a label later
+# fifa19data$Overall <- as.numeric(fifa19data$Overall)
 overall.mean <- mean(fifa19data$Overall)
 
 hist <- ggplot(fifa19data, aes(Overall, label = mean(Overall))) + 
   geom_histogram(col = "aquamarine", fill = "maroon2", binwidth = 5) + 
   ggtitle("Histogram of Overall Stat of players for FIFA19") +
+  ylab("Count") + 
   theme_light()
 
 #make a histogram with a line showing the mean and label it
@@ -105,7 +119,7 @@ hist +
 
 As we can see above, the $Overall$ statistic is approximately normally distributed. We will investigate to see if region has an effect on this as well.
 
-```{r}
+```{r Distribution by Continent}
 #we can investigate how continent has an impact on abilities
 
 #reference: https://bradleyboehmke.github.io/tutorials/histograms
@@ -114,23 +128,31 @@ continent <- countrycode(sourcevar = fifa19data$Nationality, origin = "country.n
 df <- cbind(continent, fifa19data) %>% 
   drop_na(continent)
 
+#calculate mean by region to use in histogram 
 mean.by.region <- df %>% 
   group_by(continent) %>% 
   summarize(mean_overall = mean(Overall)) 
 
 ggplot(df, aes(Overall)) +
-  geom_histogram(color = "cadetblue", fill = "cornsilk2") + 
+  geom_histogram(color = "cadetblue", fill = "cornsilk2", binwidth = 5) + 
   facet_grid(.~continent) + 
   ggtitle("Distribution of Overall Statistic, by Continent") + 
+  ylab("Count") + 
   geom_vline(data=mean.by.region, aes(xintercept=mean_overall)) + 
   theme(axis.text.x = element_text(angle = 90, vjust = 0.5, hjust=1)) 
 
 #now as boxplot
 ggplot(df, aes(continent, Overall)) +
   geom_boxplot(fill = "yellow", col = "royalblue") + 
-  theme(axis.text.x = element_text(angle = 90, vjust = 0.5, hjust=1)) + 
+  theme(axis.text.x = element_text(angle = 30, vjust = 0.5, hjust=1)) + 
   ggtitle("Boxplot of Overall Statistic, by Continent") +
-  xlab("Continent")
+  xlab("Continent") 
+#or alternate format:
+ggplot(df, aes(continent, Overall)) +
+  geom_boxplot(fill = "yellow", col = "royalblue") + 
+  ggtitle("Boxplot of Overall Statistic, by Continent") +
+  xlab("Continent") + 
+  coord_flip()
 ```
 
 We can see that South Asian players have the lowest average Overall stat and Latin American & Carribean players have the highest Overall stat. The variances seem roughly equal for all continents, with the exception of South Asia, which has the lowest variance. We also see that Europe and Latin America/Carribean have more outliers than other regions, which suggests the best and worst players reside in these regions.
