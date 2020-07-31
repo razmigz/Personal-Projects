@@ -1,0 +1,186 @@
+---
+title: "housing"
+author: "Razmig Zeitounian"
+date: "7/20/2020"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+Note: the data is available from https://www.kaggle.com/harlfoxem/housesalesprediction
+
+```{r, echo = FALSE, message = FALSE}
+library(readr)
+library(tidyverse)
+library(Hmisc)
+library(corrplot)
+library(GGally)
+library(FactoMineR)
+library(olsrr)
+library(caret)
+
+df <- read_csv("housePrices/kc_house_data.csv")
+
+#drop id and date col since we wont use those
+df <- df %>% 
+  select(-c(id, date))
+
+#add a column to define perceived age, which we will say is year built/renovated using function
+
+perceived_age <- function(built = df$yr_built, renovated = df$yr_renovated){
+  if(renovated == 0){
+    return(2020-built)
+  } else {
+  new_age = renovated - built  
+  return(new_age)
+  }
+}
+
+#now drop yr built and renovated since we have a better variable to use for comparison
+df <- cbind(df, perceived_age()) %>% 
+  select(-c(yr_built, yr_renovated))
+
+#treat zipcode, waterfront, view as factors
+df$zipcode <- as.factor(df$zipcode)
+df$waterfront <- as.factor(df$waterfront)
+df$view <- as.factor(df$view)
+
+glimpse(df)
+```
+
+```{r, plots}
+#limit to 1 mil dollars since it is a minority of the data that heavily skews the hist
+df %>% 
+  filter(price > 1000000) %>%
+  count() / nrow(df)
+
+limit.df <- df %>% 
+  filter(price < 1000000)
+ 
+price.hist <- ggplot(limit.df, aes(price)) + 
+  geom_histogram(col = "black", fill = "pink", binwidth = 10000) +
+  ylab("Count") +
+  ggtitle("Distribution of Housing Prices in King County")
+
+#get rid of scientific notation in x axis
+price.hist + scale_x_continuous(labels = function(x) format(x, scientific = FALSE)) 
+
+#suggests many outliers
+boxplot <- ggplot(df, aes(price)) + 
+  geom_boxplot(fill = "orange", color = "purple") +
+  coord_flip() + 
+  ggtitle("Boxplot of Housing Prices")
+boxplot
+#https://rpubs.com/Mentors_Ubiqum/removing_outliers
+```
+
+```{r}
+#https://www.displayr.com/how-to-create-a-correlation-matrix-in-r/
+
+response.df <- df %>% 
+  select(price)
+
+#only consider continuous vars for linear regression
+predictors.df <- df %>% 
+  select(-c(price, zipcode, waterfront, view))
+
+#create a correlation matrix to see which (if any) variables are correlated and plot
+mydata.cor = cor(predictors.df, method = c("spearman"))
+mydata.rcorr = rcorr(as.matrix(predictors.df))
+mydata.rcorr
+corrplot(mydata.cor)
+
+ggpairs(predictors.df)
+
+#ggscatmat(predictors.df, columns = 1:ncol(predictors.df))
+```
+
+From the correlation matrix and plot, we can see that price is highly correlated with $sqft_living$, $grade$, $sqfoot_{above}$ and $bathrooms$. Specifically, having more of these explanatory variables can lead to a higher price. We should, however, check for multicollineariy and use model selection criteria to see the best linear model we can create. 
+
+```{r}
+response.df <- df %>% 
+  select(price)
+
+#only consider continuous vars
+predictors.df <- df %>% 
+  select(-c(price, zipcode, waterfront, view))
+
+df2 <- cbind(response.df, predictors.df)
+
+RegBest(y=df$price, x = predictors.df)
+
+# stepwise 
+model <- lm(price ~ ., data = df2)
+ols_step_both_p(model, pent = 0.1, prem = 0.3, details = FALSE)
+ols_step_best_subset(model)
+
+# forward 
+model <- lm(price ~ ., data = df2)
+ols_step_forward_p(model)
+k <- ols_step_forward_p(model)
+plot(k)
+
+#stepwise
+intercept.only.model <- lm(price ~ 1, data = df)
+big.model <- lm(price ~ ., data = df)
+step.mod <- step(intercept.only.model, direction = 'both', scope = formula(big.model))
+
+step.mod$coefficients
+```
+
+```{r}
+#lets see if we can predict if a house is waterfront or not
+#set up for a logit model
+
+#https://rstatisticsblog.com/data-science-in-action/machine-learning/binary-logistic-regression-with-r/
+table(df$waterfront)
+
+ggplot(df, aes(price)) + 
+  geom_histogram(aes(fill=waterfront), color = "black") +
+  ggtitle("Distribution of price, by waterfront")
+
+#create new df to include only what we're interested in
+subset.df <- df %>% 
+  select(price:condition, `perceived_age()`)
+
+index <- createDataPartition(subset.df$waterfront, p = .70, list = FALSE)
+train <- subset.df[index, ]
+test <- subset.df[-index, ]
+
+#build logit model
+logit.model <- glm(waterfront ~ ., family = binomial(), train)
+
+#suggests some of these variables are significant
+summary(logit.model)
+
+pred.prob <- predict(logit.model, test, type = "response")
+
+# Converting from probability to actual output
+train$pred.class <- ifelse(logit.model$fitted.values >= 0.5, "Waterfront", "Not Waterfront")
+
+test$pred.class <- ifelse(pred.prob >= 0.5, "Waterfront", "Not Waterfront")
+ 
+# Generating the classification table
+ctab_train <- table(train$waterfront, train$pred.class)
+ctab_train
+
+ctab_test <- table(test$waterfront, test$pred.class)
+ctab_test
+
+#check accuracy on training; add diagonals
+accuracy.train <- (ctab_train[1,1] + ctab_train[2,2])/(sum(ctab_train))
+cat("The accuracy on the training data is:", accuracy.train*100, "%")
+
+#now check testing accuracy
+accuracy.test <- (ctab_test[1,1] + ctab_test[2,2])/(sum(ctab_test))
+cat("The accuracy on the testing data is:", accuracy.test*100, "%")
+```
+
+Our data is very imbalanced (i.e., there are many more homes that do NOT have a waterfront view than those that do). Despite this, our logistic regression model was able to perform very well on both training and testing data.
+
+
+
+
+
