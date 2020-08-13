@@ -2,14 +2,16 @@
 title: "housing"
 author: "Razmig Zeitounian"
 date: "7/20/2020"
-output: html_document
+output:
+  html_document: default
+  pdf_document: default
 ---
 
 ```{r setup, include=FALSE}
 knitr::opts_chunk$set(echo = TRUE)
 ```
 
-Note: the data is available from https://www.kaggle.com/harlfoxem/housesalesprediction
+Note: the data set is available from https://www.kaggle.com/harlfoxem/housesalesprediction
 
 ```{r, echo = FALSE, message = FALSE}
 library(readr)
@@ -20,27 +22,29 @@ library(GGally)
 library(FactoMineR)
 library(olsrr)
 library(caret)
+library(glmnet)
 
 df <- read_csv("housePrices/kc_house_data.csv")
 
 #drop id and date col since we wont use those
 df <- df %>% 
-  select(-c(id, date))
+  dplyr::select(-c(id, date))
 
-#add a column to define perceived age, which we will say is year built/renovated using function
-
-perceived_age <- function(built = df$yr_built, renovated = df$yr_renovated){
+#data from 2015; use that as current year
+years_old <- function(built = df$yr_built, renovated = df$yr_renovated){
+  #consider no renovation and most recent renovation case to create an effective years old variable for each house
   if(renovated == 0){
-    return(2020-built)
+    return(2015-built)
   } else {
-  new_age = renovated - built  
+  new_age = 2015 - renovated - built  
   return(new_age)
   }
 }
 
 #now drop yr built and renovated since we have a better variable to use for comparison
-df <- cbind(df, perceived_age()) %>% 
-  select(-c(yr_built, yr_renovated))
+df <- cbind(df, years_old()) %>% 
+  dplyr::select(-c(yr_built, yr_renovated)) %>% 
+  rename(effective_age = `years_old()`)
 
 #treat zipcode, waterfront, view as factors
 df$zipcode <- as.factor(df$zipcode)
@@ -76,15 +80,15 @@ boxplot
 #https://rpubs.com/Mentors_Ubiqum/removing_outliers
 ```
 
-```{r}
+```{r Correlation}
 #https://www.displayr.com/how-to-create-a-correlation-matrix-in-r/
 
 response.df <- df %>% 
-  select(price)
+  dplyr::select(price)
 
 #only consider continuous vars for linear regression
 predictors.df <- df %>% 
-  select(-c(price, zipcode, waterfront, view))
+  dplyr::select(-c(price, zipcode, waterfront, view))
 
 #create a correlation matrix to see which (if any) variables are correlated and plot
 mydata.cor = cor(predictors.df, method = c("spearman"))
@@ -93,64 +97,138 @@ mydata.rcorr
 corrplot(mydata.cor)
 
 ggpairs(predictors.df)
-
-#ggscatmat(predictors.df, columns = 1:ncol(predictors.df))
 ```
 
 From the correlation matrix and plot, we can see that price is highly correlated with $sqft_living$, $grade$, $sqfoot_{above}$ and $bathrooms$. Specifically, having more of these explanatory variables can lead to a higher price. We should, however, check for multicollineariy and use model selection criteria to see the best linear model we can create. 
 
-```{r}
-response.df <- df %>% 
-  select(price)
+```{r ML Setup}
+#use 70% as training
+index = sample(1:nrow(df), 0.7*nrow(df)) 
+train = df[index,] # Create the training data 
+test = df[-index,] # Create the test data
+pre_proc_val <- preProcess(train[,2:20], method = c("center", "scale"))
 
-#only consider continuous vars
-predictors.df <- df %>% 
-  select(-c(price, zipcode, waterfront, view))
+train[, 2:20] = predict(pre_proc_val, train[,2:20])
+test[, 2:20] = predict(pre_proc_val, test[,2:20])
 
-df2 <- cbind(response.df, predictors.df)
+#check lin model of training
+training.preds <- dplyr::select(df, -price) %>% 
+  as.tibble()
 
-RegBest(y=df$price, x = predictors.df)
+#set up a linear model on all predictor variables
+training.model.full <- lm(price ~ ., data = train)
+summary(training.model.full)
 
-# stepwise 
-model <- lm(price ~ ., data = df2)
-ols_step_both_p(model, pent = 0.1, prem = 0.3, details = FALSE)
-ols_step_best_subset(model)
+#Step 1 - create the evaluation metrics function
+eval_metrics = function(model, df, predictions, target){
+    resids = df[,target] - predictions
+    resids2 = resids**2
+    N = length(predictions)
+    r2 = as.character(round(summary(model)$r.squared, 2))
+    adj_r2 = as.character(round(summary(model)$adj.r.squared, 2))
+    cat("Adjusted R^2 is:",adj_r2, "\n") #Adjusted R-squared
+    cat("RMSE is:", as.character(round(sqrt(sum(resids2)/N), 2))) #RMSE
+}
 
-# forward 
-model <- lm(price ~ ., data = df2)
-ols_step_forward_p(model)
-k <- ols_step_forward_p(model)
-plot(k)
+# Step 2 - predicting and evaluating the model on train data
+predictions = predict(training.model.full, newdata = train)
+eval_metrics(training.model.full, train, predictions, target = 'price')
 
-#stepwise
-intercept.only.model <- lm(price ~ 1, data = df)
-big.model <- lm(price ~ ., data = df)
-step.mod <- step(intercept.only.model, direction = 'both', scope = formula(big.model))
+# Step 3 - predicting and evaluating the model on test data
+predictions = predict(training.model.full, newdata = test)
 
-step.mod$coefficients
+eval_metrics(training.model.full, test, predictions, target = 'price')
 ```
 
+We can see many predictors may be significant predictors of price (p-val < 0.05 for many variables). Our adjusted $R^2$ is also fairly high (about 81%). This means that about 81% of variation in price is accounted for by our predictor variables, which means we have a fairly strong correlation beween $price$ and the predictor variables. 
+
+
 ```{r}
+#set up dummy vars for predictors
+dummies <- dummyVars(price ~ ., data = df)
+
+train_dummies = predict(dummies, newdata = train)
+test_dummies = predict(dummies, newdata = test)
+
+x_vars <- model.matrix(price~. , df)[,-1]
+y_var <- df$price
+lambda_seq <- 10^seq(2, -2, by = -.1)
+ 
+# Splitting the data into test and train
+set.seed(86)
+train = sample(1:nrow(x_vars), nrow(x_vars)/2)
+x_test = (-train)
+y_test = y_var[x_test]
+ 
+cv_output <- cv.glmnet(x_vars[train,], y_var[train],
+                       alpha = 1, lambda = lambda_seq, 
+                       nfolds = 5)
+ 
+# identifying best lamda
+best_lam <- cv_output$lambda.min
+best_lam
+
+# Rebuilding the model with best lamda value identified
+lasso_best <- glmnet(x_vars[train,], y_var[train], alpha = 1, lambda = best_lam)
+pred <- predict(lasso_best, s = best_lam, newx = x_vars[x_test,])
+
+
+
+#lasso_reg <- cv.glmnet(x, y_train, alpha = 1, lambda = lambda_seq, standardize = TRUE, nfolds = 5)
+
+# Best 
+# lambda_best <- lasso_reg$lambda.min 
+# lambda_best
+```
+
+```{r Logistic Regression for Classification}
 #lets see if we can predict if a house is waterfront or not
 #set up for a logit model
 
-#https://rstatisticsblog.com/data-science-in-action/machine-learning/binary-logistic-regression-with-r/
+#view prior counts
 table(df$waterfront)
+
+#now as percents
+(table.percentages <- table(df$waterfront)/sum(table(df$waterfront)))
+
+#notice that a strong majority of the data is NOT waterfront; i.e., it is imbalanced
+#this means we should use all waterfronts and sample the non waterfronts (see: https://stats.stackexchange.com/questions/164693/adding-weights-to-logistic-regression-for-imbalanced-data)
+
+#replace for clarity in graph
+df$waterfront <- gsub("0", "Not waterfront", df$waterfront)
+df$waterfront <- gsub("1", "Waterfront", df$waterfront)
 
 ggplot(df, aes(price)) + 
   geom_histogram(aes(fill=waterfront), color = "black") +
-  ggtitle("Distribution of price, by waterfront")
+  ggtitle("Distribution of price, by waterfront status")
+
+#keep all waterfront:
+df$waterfront <- as.factor(df$waterfront)
+waterfront <- df %>% 
+  filter(waterfront == "Waterfront")
+
+#sample 10% of non waterfront
+set.seed(2020)
+not.waterfront <- df %>% 
+  filter(waterfront == "Not waterfront")
+sample.nw <- sample_n(not.waterfront, size = ceiling(.1*nrow(df)))
 
 #create new df to include only what we're interested in
 subset.df <- df %>% 
-  select(price:condition, `perceived_age()`)
+  dplyr::select(price:condition, effective_age)
 
+#create testing and training data
 index <- createDataPartition(subset.df$waterfront, p = .70, list = FALSE)
 train <- subset.df[index, ]
 test <- subset.df[-index, ]
 
-#build logit model
-logit.model <- glm(waterfront ~ ., family = binomial(), train)
+#build logit model; need to put dummy var back
+df$waterfront <- gsub("Not waterfront", "0", subset.df$waterfront)
+df$waterfront <- gsub("Waterfront", "1", subset.df$waterfront)
+
+##
+df$waterfront <- as.factor(df$waterfront)
+logit.model <- glm(as.factor(waterfront) ~ ., weights = 10, family = binomial(), train)
 
 #suggests some of these variables are significant
 summary(logit.model)
@@ -178,9 +256,13 @@ accuracy.test <- (ctab_test[1,1] + ctab_test[2,2])/(sum(ctab_test))
 cat("The accuracy on the testing data is:", accuracy.test*100, "%")
 ```
 
-Our data is very imbalanced (i.e., there are many more homes that do NOT have a waterfront view than those that do). Despite this, our logistic regression model was able to perform very well on both training and testing data.
+Due to high imbalance, we must assign weights.
+
+# References
+https://www.pluralsight.com/guides/linear-lasso-and-ridge-regression-with-r
+https://www.displayr.com/how-to-create-a-correlation-matrix-in-r/
+https://rstatisticsblog.com/data-science-in-action/machine-learning/binary-logistic-regression-with-r/
+https://www.r-bloggers.com/dealing-with-unbalanced-data-in-machine-learning/
 
 
-
-#
 
