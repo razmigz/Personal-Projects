@@ -1,7 +1,6 @@
 ---
-title: "housing"
+title: "Housing"
 author: "Razmig Zeitounian"
-date: "7/20/2020"
 output:
   html_document: default
   pdf_document: default
@@ -26,6 +25,9 @@ library(caret)
 library(glmnet)
 library(MASS)
 library(leaps)
+library(car)
+library(boot)
+library(gridExtra)
 
 df <- read_csv("housePrices/kc_house_data.csv")
 
@@ -33,7 +35,7 @@ df <- read_csv("housePrices/kc_house_data.csv")
 df <- df %>% 
   dplyr::select(-c(id, date))
 
-#data from 2015; use that as "current" year in order to create an effective years old variable; this will be more helpful
+#data from 2015; use that as "current" year in order to create an "effective years old" variable; this will be more helpful
 #in determining a good age since renovations make a house feel newer
 years_old <- function(built = df$yr_built, renovated = df$yr_renovated){
   #consider no renovation and most recent renovation case to create an effective years old variable for each house
@@ -60,9 +62,12 @@ df$condition <- as.factor(df$view)
 df <- df %>% 
   dplyr::select(-c(sqft_living, sqft_lot))
 
-glimpse(df)
+#see how many zip codes we have total and how many properties from each
+df %>% 
+  group_by(zipcode) %>% 
+  count()
 
-# df %>% filter(condition == 1) %>% pull(price) %>% prettyNum(.) %>% top_n(20)
+glimpse(df)
 ```
 
 ```{r, plots}
@@ -77,11 +82,12 @@ limit.df <- df %>%
 price.hist <- ggplot(limit.df, aes(price)) + 
   geom_histogram(col = "black", fill = "pink", binwidth = 10000) +
   ylab("Count") +
-  xlab ("Price (in USD)")
-  ggtitle("Distribution of Housing Prices in King County") 
+  xlab ("Price (in USD)") +
+  ggtitle("Distribution of Housing Prices in King County") +labs(subtitle = "*Prices are capped at 1 million dollars for better visibility")
 
 #get rid of scientific notation in x axis
-price.hist + scale_x_continuous(labels = function(x) format(x, scientific = FALSE)) 
+price.hist + 
+  scale_x_continuous(labels = function(x) format(x, scientific = FALSE)) 
 
 #suggests many outliers
 boxplot <- ggplot(df, aes(price)) + 
@@ -107,16 +113,37 @@ length(outliers$value)/nrow(df)
 
 #new df w/ about 5% of data removed
 df.no.outliers <- df[-outliers$value, ]
-
-#check for linear relationship w/ some variables on price
-ggplot(df.no.outliers, aes(x= bedrooms + bathrooms + sqft_living15, y = price)) +
-  geom_smooth(method = "lm") +
-  ggtitle("Relationship between some predictor variables and price (in USD)") 
-
-#do we need to scale?
 ```
 
-When considering $price$ only, we find that we have some outliers, and they make up about 5% of the daat. We will look again at outliers later to see if we should keep them or drop them when creating a model.
+When using outliers via boxplot method, we see that about 5% of the data are outliers. We will have to keep outliers in consideration as we go on.
+
+or
+
+When considering $price$ only, we find that we have some outliers, and they make up about 5% of the data. We will look again at outliers later to see if we should keep them or drop them when creating a model.
+
+```{r Quick Plots}
+
+#check for linear relationship w/ some variables on price; limit to >0 and <= 8 bedrooms due to the others having few data
+df.max8 <- df %>% 
+  filter(bedrooms <= 8 & bedrooms > 0)
+
+#predefine bathroom as factor so it looks nicer on the legend
+n_bathrooms <- as.factor(df.max8$bathrooms)
+df.max8 <- cbind(df.max8, n_bathrooms)
+
+p1 <- ggplot(df.max8, aes(x = sqft_living15, y = price)) +
+  geom_point(aes(color = n_bathrooms)) + 
+  geom_smooth(method = "lm") +
+  ggtitle("Relationship between some sqft_living variables and price (in USD), by number of bathrooms")
+
+p1
+
+p1 +
+  facet_grid(bedrooms~.) +
+  ggtitle("Relationship between some sqft_living variables and price (in USD), by number of bathrooms and bedrooms")
+```
+
+We can see a linear trend in the data with some possible outliers that may be skewing the regression model. Having more bathrooms is correlated with a higher price.
 
 
 ```{r Correlation, message=FALSE}
@@ -139,189 +166,137 @@ corrplot.mixed(mydata.cor, lower.col = "black", number.cex = .8)
 
 From the correlation matrix and plot, we can see that price is moderately correlated with $sqft_{living_{15}}$, $grade$, $sqfoot_{above}$ and $bathrooms$. Specifically, having more of these explanatory variables can lead to a higher price. We should, however, check for multicollinearity (it seems like $sqft_{above}$ and $bathrooms$ are highly correlated for example) and use model selection criteria to see the best linear model we can create. 
 
+We must keep in mind that a regression model must satisfy the following assumptions:
+  All samples are independent of one another and are random and identically distributed
+  The residuals have mean 0 and are scattered randomly (that is, there is no pattern to the residuals) under a normal        distribution
+  
+
 ```{r Regression Models}
-full.model <- lm(price ~ ., data = df)
+#create a full model that uses all numeric vars
+full.model <- lm(price ~ ., data = check.corr)
+
+#visualize fitted points; we can see it fans
+ggplot(df, aes(x=price, y=full.model$fitted.values)) +
+  geom_point(color = "pink") +
+  labs(x="Price", y="Fitted Prices under a full model Linear Regression", title = "Fitted Prices vs. Actual Prices")
 
 step.model <- stepAIC(full.model, direction = "both", 
                       trace = FALSE)
-#suggests many possible predictors; note that some zip codes are significant while others are not
+
+#suggests many possible predictors, and sqft_lot15 is the most insignificant (highest p-val & lowest t val)
 summary(step.model)
 
-step.aic <- step.model$anova$AIC
 #check diagnostics of linear model - it seems like our model violates some assumptions; it has fanning (in residuals vs fitted) and non-normal residuals (from qqplot)
 plot(step.model)
 
-my.model <- lm(price ~ bedrooms + bathrooms + floors + sqft_above + lat, data = df)
-plot(my.model)
+my.model <- lm(price ~ bedrooms + bathrooms + floors + sqft_above + lat, data = check.corr)
+plot(my.model, main = "Full model diagnostics under a full model with original data")
 
-#let's try removing outliers first
-#########################
-
-
-#lets try some transformations
+#lets try some transformations to try to meet diagnostics
 log.p <- log(df$price)
 
 #still not good
 full.model.t <- lm(log.p ~ ., data = df)
-plot(full.model.t)
+plot(full.model.t, col = "blue")
+
+#try w/ removed outliers
+Q <- quantile(df$price, probs=c(.25, .75), na.rm = FALSE)
+iqr <- IQR(df$price)
+up <-  Q[2]+1.5*iqr # Upper Range  
+low <- Q[1]-1.5*iqr # Lower Range; does not make sense in this context
+
+#df with outliers defined using quantiles removed
+rm.out <- df %>% 
+  filter(price <= up)
+
+#errors look mostly random here, but normality assumption is not met, but plot still looks good
+mod1 <- lm(price ~ ., data = rm.out)
+summary(mod1)
+plot(mod1)
+#this is a big improvement compared to before!; note that this model holds only when removing outliers (prices > up=1129575)
+#but the qqplot suggests normality is not met; residuals look randomly scattered around 0
+lm.res.fit <- ggplot(rm.out, aes(y=mod1$residuals, x=mod1$fitted.values)) +
+  geom_point(color = "navy") + 
+  labs(x="Fitted Values with Linear Model", y="Residuals with Model1", title = "Residuals vs. Fitted Values under Linear Model (Outliers Removed)") +
+  geom_smooth(method = "lm")
+lm.res.fit
+
+#this made it worse
+mod2 <- lm(log(price) ~ ., data = rm.out)
+plot(mod2)
+
+#do boxcox; suggests to not transform since lambda is ~0
+boxCox(full.model, family="yjPower", plotit = TRUE)
 ```
 
+Since we cannot get a model that meets diagnostics, even after transfomrations, we will create a GLM.
 
-```{r ML Setup}
-#use 70% as training
-index = sample(1:nrow(df), 0.7*nrow(df)) 
-train = df[index,] # Create the training data 
-test = df[-index,] # Create the test data
-pre_proc_val <- preProcess(train[,2:18], method = c("center", "scale"))
 
-train[, 2:18] = predict(pre_proc_val, train[,2:18])
-test[, 2:18] = predict(pre_proc_val, test[,2:18])
+We will try a GLM to see its performance.
 
-#check lin model of training
-training.preds <- dplyr::select(df, -price) %>% 
-  as_tibble()
+```{r GLM Model}
+#https://www.educba.com/glm-in-r/
+glm.mod <- glm(price ~ ., data = check.corr)
+summary(glm.mod)
 
-#set up a linear model on all predictor variables
-training.model.full <- lm(price ~ ., data = train)
-summary(training.model.full)
+ggplot(df, aes(price, glm.mod$fitted.values)) +
+  geom_point(color = "green") +
+  ggtitle("Fitted GLM values vs Actual Values") +
+  labs(y = "Fitted Price Values", x = "Price Values")
 
-#Step 1 - create the evaluation metrics function
-eval_metrics = function(model, df, predictions, target){
-    resids = df[,target] - predictions
-    resids2 = resids**2
-    N = length(predictions)
-    r2 = as.character(round(summary(model)$r.squared, 2))
-    adj_r2 = as.character(round(summary(model)$adj.r.squared, 2))
-    cat("Adjusted R^2 is:",adj_r2, "\n") #Adjusted R-squared
-    cat("RMSE is:", as.character(round(sqrt(sum(resids2)/N), 2))) #RMSE
-}
+df.rescale <- df %>% 
+  mutate_if(is.numeric, funs(as.numeric(scale(.))))
 
-# Step 2 - predicting and evaluating the model on train data
-predictions = predict(training.model.full, newdata = train)
-eval_metrics(training.model.full, train, predictions, target = 'price')
+#under this model, we see that floors is insignificant; dont include zipcode since it has too many factors (30) and condition has NA's
+glm.mod2 <- glm(price ~ . -zipcode -condition, data = df.rescale)
+summary(glm.mod2) #AIC: 35756
 
-# Step 3 - predicting and evaluating the model on test data
-predictions = predict(training.model.full, newdata = test)
+#try dropping variables to compare AIC values; start with floors since it has lowest t-val
+glm.mod3 <- glm(price ~ . - zipcode -condition -floors, data = df.rescale)
+summary(glm.mod3) #AIC: 35754
 
-eval_metrics(training.model.full, test, predictions, target = 'price')
+glm.mod4 <- glm(price ~ .- zipcode -condition -floors -sqft_lot15, data = df.rescale)
+summary(glm.mod4) #AIC: 35772; went up compared to 3
+
+#we can see this model performed poorly here; the linear regression we had did better than this
+ggplot(df.rescale, aes(price, glm.mod3$fitted.values)) +
+  geom_point(color = "seagreen2")
+
+#try removing outliers again
+Q.r <- quantile(df.rescale$price, probs=c(.25, .75), na.rm = FALSE)
+iqr.r <- IQR(df.rescale$price)
+up.r <-  Q[2]+1.5*iqr.r # Upper Range  
+low.r <- Q[1]-1.5*iqr.r # Lower Range; does not make sense in this context
+
+#df with outliers defined using quantiles removed
+rm.rescale.out <- df.rescale %>% 
+  filter(price <= up.r)
+
+glm.r1 <- glm(price ~ . -zipcode -condition, data = rm.rescale.out)
+summary(glm.r1) #AIC: 11097
+
+glm.r2 <- glm(price ~ . -zipcode -condition -floors, data = rm.rescale.out)
+summary(glm.r2) #AIC: 11262, but is easier to interpet
+
+glm.r3 <- glm(price ~ . -zipcode -condition -floors -long, data = rm.rescale.out)
+summary(glm.r3) #AIC: 11263; means model2 is better if using AIC criterion
+
+#compare residuals to fitted values; it looks like we have a bit of fanning here, so the linear model seems more appropriate
+glm.res.fit <- ggplot(rm.rescale.out, aes(y=glm.r2$residuals, x=glm.r2$fitted.values)) +
+  geom_point(color = "aquamarine") +
+  geom_hline(yintercept = 0) +
+  labs(x="Fitted Values under GLM", y = "Residuals under GLM", title = "GLM Residuals vs. Fitted Values")
+glm.res.fit
 ```
 
-We can see many predictors may be significant predictors of price (p-val < 0.05 for many variables). Our adjusted $R^2$ is also fairly high (about 81%). This means that about 81% of variation in price is accounted for by our predictor variables, which means we have a fairly strong correlation beween $price$ and the predictor variables. 
+Let's compare the linear model residuals vs fitted values plto with the GLM, graphically.
 
-
-```{r}
-#set up dummy vars for predictors
-dummies <- dummyVars(price ~ ., data = df)
-
-train_dummies = predict(dummies, newdata = train)
-test_dummies = predict(dummies, newdata = test)
-
-x_vars <- model.matrix(price~. , df)[,-1]
-y_var <- df$price
-lambda_seq <- 10^seq(2, -2, by = -.1)
- 
-# Splitting the data into test and train
-set.seed(86)
-train = sample(1:nrow(x_vars), nrow(x_vars)/2)
-x_test = (-train)
-y_test = y_var[x_test]
- 
-cv_output <- cv.glmnet(x_vars[train,], y_var[train],
-                       alpha = 1, lambda = lambda_seq, 
-                       nfolds = 5)
- 
-# identifying best lamda
-best_lam <- cv_output$lambda.min
-best_lam
-
-# Rebuilding the model with best lamda value identified
-lasso_best <- glmnet(x_vars[train,], y_var[train], alpha = 1, lambda = best_lam)
-pred <- predict(lasso_best, s = best_lam, newx = x_vars[x_test,])
-
-
-
-#lasso_reg <- cv.glmnet(x, y_train, alpha = 1, lambda = lambda_seq, standardize = TRUE, nfolds = 5)
-
-# Best 
-# lambda_best <- lasso_reg$lambda.min 
-# lambda_best
+```{r compare models}
+grid.arrange(lm.res.fit, glm.res.fit)
 ```
 
-```{r Logistic Regression for Classification}
-#lets see if we can predict if a house is waterfront or not
-#set up for a logit model
+Since the GLM seems to have a fanning issue, we should keep the linear model instead as a "better" model.
 
-#view prior counts
-table(df$waterfront)
-
-#now as percents
-(table.percentages <- table(df$waterfront)/sum(table(df$waterfront)))
-
-#notice that a strong majority of the data is NOT waterfront; i.e., it is imbalanced
-#this means we should use all waterfronts and sample the non waterfronts (see: https://stats.stackexchange.com/questions/164693/adding-weights-to-logistic-regression-for-imbalanced-data)
-
-#replace for clarity in graph
-df$waterfront <- gsub("0", "Not waterfront", df$waterfront)
-df$waterfront <- gsub("1", "Waterfront", df$waterfront)
-
-ggplot(df, aes(price)) + 
-  geom_histogram(aes(fill=waterfront), color = "black") +
-  ggtitle("Distribution of price, by waterfront status")
-
-#keep all waterfront:
-df$waterfront <- as.factor(df$waterfront)
-waterfront <- df %>% 
-  filter(waterfront == "Waterfront")
-
-#sample 10% of non waterfront
-set.seed(2020)
-not.waterfront <- df %>% 
-  filter(waterfront == "Not waterfront")
-sample.nw <- sample_n(not.waterfront, size = ceiling(.1*nrow(df)))
-
-#create new df to include only what we're interested in
-subset.df <- df %>% 
-  dplyr::select(price:condition, effective_age)
-
-#create testing and training data
-index <- createDataPartition(subset.df$waterfront, p = .70, list = FALSE)
-train <- subset.df[index, ]
-test <- subset.df[-index, ]
-
-#build logit model; need to put dummy var back
-df$waterfront <- gsub("Not waterfront", "0", subset.df$waterfront)
-df$waterfront <- gsub("Waterfront", "1", subset.df$waterfront)
-
-##
-df$waterfront <- as.factor(df$waterfront)
-#need to look @ weights here
-logit.model <- glm(as.factor(waterfront) ~ ., weights = 10, family = binomial(), train)
-
-#suggests some of these variables are significant
-summary(logit.model)
-
-pred.prob <- predict(logit.model, test, type = "response")
-
-# Converting from probability to actual output
-train$pred.class <- ifelse(logit.model$fitted.values >= 0.5, "Waterfront", "Not Waterfront")
-
-test$pred.class <- ifelse(pred.prob >= 0.5, "Waterfront", "Not Waterfront")
- 
-# Generating the classification table
-ctab_train <- table(train$waterfront, train$pred.class)
-ctab_train
-
-ctab_test <- table(test$waterfront, test$pred.class)
-ctab_test
-
-#check accuracy on training; add diagonals
-accuracy.train <- (ctab_train[1,1] + ctab_train[2,2])/(sum(ctab_train))
-cat("The accuracy on the training data is:", accuracy.train*100, "%")
-
-#now check testing accuracy
-accuracy.test <- (ctab_test[1,1] + ctab_test[2,2])/(sum(ctab_test))
-cat("The accuracy on the testing data is:", accuracy.test*100, "%")
-```
 
 Due to high imbalance, we must assign weights.
 
@@ -332,6 +307,7 @@ https://www.pluralsight.com/guides/linear-lasso-and-ridge-regression-with-r
 https://www.displayr.com/how-to-create-a-correlation-matrix-in-r/
 https://rstatisticsblog.com/data-science-in-action/machine-learning/binary-logistic-regression-with-r/
 https://www.r-bloggers.com/dealing-with-unbalanced-data-in-machine-learning/
+https://www.statmethods.net/advstats/bootstrapping.html
 
 
 
