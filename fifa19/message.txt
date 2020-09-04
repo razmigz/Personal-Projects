@@ -1,1 +1,2 @@
 
+EDA on Fifa Dataset. Work in progress - planning to run some ML algorithms on it
