@@ -1,17 +1,20 @@
 ---
-title: "R Notebook"
+title: "Pokemon"
 author: "Razmig Zeitounian"
 output:
   html_document:
     df_print: paged
+  pdf_document: default
 ---
 
+The dataset is available at https://www.kaggle.com/abcsds/pokemon
+
 ### Pokemon Data
-```{r, message=FALSE}
-#link: https://www.kaggle.com/abcsds/pokemon
+
+```{r setup, message=FALSE}
 pokemon <- read.csv("Pokemon.csv")
 
-library(ggplot2)
+library(tidyverse)
 library(car) #gives LeveneTest
 library(EnvStats) #for Box-Cox transformations
 library(MASS) # for model selecting
@@ -32,6 +35,7 @@ kable(head(pokemon,15))
 ```
 
 ### Tables of Types
+
 ```{r}
 #we make tables to get an idea of the amount of pokemon by each type
 type.table <- table(pokemon$Type.1, pokemon$Type.2)
@@ -40,13 +44,15 @@ kable(type.table)
 t1.table <- table(pokemon$Type.1)
 kable(t1.table)
 
-t2.table <- table(pokemon$Type.2)
-kable(t2.table)
+t2.table <- table(pokemon$Type.2) 
+kable(t2.table, booktabs = TRUE)
 ```
-Above, we have a table showing the number of pokemon with an interaction between Type 1 and Type 2, type 1, and type 2.
+
+Above, we have a table showing the number of pokemon with an crossover between Type 1 and Type 2. We also have a table that shows how many of each pokemon have type 1, and type 2 individually.
 
 ## Plots and Summary Stats
-```{r}
+
+```{r EDA}
 #see if generations have different numbers of Type 1's and base stat totals
 ggplot(pokemon, aes(Type.1, Total, color = Generation)) + geom_boxplot() + theme(plot.subtitle = element_text(vjust = 1), 
     plot.caption = element_text(vjust = 1), 
@@ -77,12 +83,6 @@ bst.by.gen.plot
 #interactive version:
 ggplotly(bst.by.gen.plot)
 
-#
-ggplot(pokemon, aes(Total, color=Generation, fill=Generation)) + geom_histogram() + theme(plot.subtitle = element_text(vjust = 1), 
-    plot.caption = element_text(vjust = 1), 
-    panel.background = element_rect(fill = "honeydew1"), 
-    plot.background = element_rect(fill = "lightsteelblue1"))
-
 ### Plot frequency of each type
 #fct_infreq orders from least to greatest for type I
 ggplot(pokemon, aes(x=fct_infreq(Type.1))) + geom_bar(fill = "aquamarine", color = "red") + theme(plot.subtitle = element_text(vjust = 1), 
@@ -99,8 +99,10 @@ ggplot(pokemon, aes(x=fct_infreq(Type.2))) + geom_bar(fill = "aquamarine", color
     plot.background = element_rect(fill = "tomato2"))+labs(title = "Frequency of each Type II", 
     x = "Type II", y = "Count")+labs(caption = "*Note that the empty label means no secondary type")
 ```
+
 ### Histograms for each stat by Generation
-```{r}
+
+```{r Histograms by Gen}
 #make histograms
 
 #hp
@@ -131,7 +133,8 @@ ggplotly(hist.spd)
 #notice how they are all approximately normal and may contain some outliets
 ```
 ### Base Stat Total (BST) Distribution
-```{r}
+
+```{r BST by Gen}
 hist.bst <- ggplot(pokemon, aes(x=Total)) + geom_histogram(col = "green", fill = "purple") + facet_grid(.~Generation) + ggtitle("Distribution of Base Stat Total (BST) by Generation") + theme(plot.subtitle = element_text(vjust = 1), 
     plot.caption = element_text(vjust = 1), 
     panel.background = element_rect(fill = "honeydew1"), 
@@ -139,9 +142,11 @@ hist.bst <- ggplot(pokemon, aes(x=Total)) + geom_histogram(col = "green", fill =
 
 ggplotly(hist.bst)
 ```
+
 The histogram suggests BST is approximately normally distributed across all generations.
 
 ### One-Way ANOVA on BST using Generation
+
 ```{r}
 pokemon.lm.model <- lm(Total ~ Generation, data = pokemon)
 pokemon.aov <- aov(pokemon.lm.model)
@@ -161,13 +166,18 @@ summary(legendary.aov)
 #This suggest legendaries have a higher BST than non-legendaries
 ```
 ### Visualize errors under the model
+
 ```{r}
-ggplot(pokemon, aes(pokemon.lm.model$residuals)) + geom_histogram(color = "seagreen2") + xlab("Residuals")
+ggplot(pokemon, aes(pokemon.lm.model$residuals)) + 
+  geom_histogram(color = "seagreen2") + 
+  xlab("Residuals") +
+  ggtitle("Hisotgram of residuals under our model")
 ```
 This plot suggests our errors are skewed left, which violates the normality assumption of the residuals.
 
 ### Diagnostics/Formal Assumption Testing
-```{r}
+
+```{r Diagnostics}
 resid <- pokemon.lm.model$residuals
 shapiro.wilk.test <- shapiro.test(resid)
 shapiro.wilk.test
@@ -181,7 +191,8 @@ brown.fors.test
 These results mean that although our equal variance condition is met for any reasonable value of $\alpha$, our errors are not approximately normally distributed. Therefore, we will consider transforming our variables to satisfy ANOVA assumptions.
 
 ### Transformations
-```{r}
+
+```{r Transformations}
 #check skew of response
 skewness(pokemon$Total)
 
@@ -206,7 +217,8 @@ shapiro.wilk.test3
 Since transformations did not satisfy ANOVA assumptions, we will use non-parametric methods for our hypothesis test.
 
 ### Non-Parametric Testing
-```{r}
+
+```{r New Model}
 #add a rank column
 pokemon$Rank = rank(pokemon$Total, ties = "average")
 
@@ -255,4 +267,5 @@ many.perms.KW <- sapply(1:R,function(i){
 p.value <- mean(many.perms.KW > KW.OBS)
 p.value
 ```
+
 Both of these non-parametric tests lead to the conclusion that we cannot conclude the distribution of total (BST) is different for at least one generation.
