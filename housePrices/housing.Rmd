@@ -69,6 +69,16 @@ df %>%
 
 glimpse(df)
 ```
+First, let's visualize our data on a map.
+
+```{r Map of King County}
+ggplot(df, aes(y=lat, x=long)) +
+  geom_point(color = "steelblue1") +
+  labs(x = "Longitude", y = "Latitude", title = "Map of King County Properties in Dataset") +     
+  theme(panel.background = element_rect(fill = "lightgoldenrodyellow"), 
+    plot.background = element_rect(fill = "coral3")) 
+```
+
 
 ```{r, plots}
 #limit to 1 mil dollars since it is a minority of the data that heavily skews the hist
@@ -289,13 +299,118 @@ glm.res.fit <- ggplot(rm.rescale.out, aes(y=glm.r2$residuals, x=glm.r2$fitted.va
 glm.res.fit
 ```
 
-Let's compare the linear model residuals vs fitted values plto with the GLM, graphically.
+Let's compare the linear model residuals vs fitted values plot with the GLM, graphically.
 
 ```{r compare models}
 grid.arrange(lm.res.fit, glm.res.fit)
 ```
 
 Since the GLM seems to have a fanning issue, we should keep the linear model instead as a "better" model.
+Consequently, we will plot a histogram of the residuals under the linear model to see how our errors are distributed.
+
+```{r}
+ggplot(rm.out, aes(mod1$residuals)) +
+  geom_histogram(color = "purple", fill = "yellow") +
+  labs(x="Residuals under Model 1", title = "Histogram of Residuals under Model 1")
+```
+
+It looks like our errors are $~N$ with mean 0 and a constant variance.
+
+
+```{r training/testing}
+create_train_test <- function(data, size = 0.8, train = TRUE) {
+    n_row = nrow(data)
+    total_row = size * n_row
+    train_sample <- 1: total_row
+    if (train == TRUE) {
+        return (data[train_sample, ])
+    } else {
+        return (data[-train_sample, ])
+    }
+}
+
+data_train <- create_train_test(df.rescale, 0.8, train = TRUE)
+data_test <- create_train_test(df.rescale, 0.8, train = FALSE)
+dim(data_train)
+```
+
+```{r Logistic Regression for Classification}
+#lets see if we can predict if a house is waterfront or not
+#set up for a logit model
+
+#view prior counts
+table(df$waterfront)
+
+#now as percents
+(table.percentages <- table(df$waterfront)/sum(table(df$waterfront)))
+
+#notice that a strong majority of the data is NOT waterfront; i.e., it is imbalanced
+#this means we should use all waterfronts and sample the non waterfronts (see: https://stats.stackexchange.com/questions/164693/adding-weights-to-logistic-regression-for-imbalanced-data)
+
+#replace for clarity in graph
+df$waterfront <- gsub("0", "Not waterfront", df$waterfront)
+df$waterfront <- gsub("1", "Waterfront", df$waterfront)
+
+ggplot(df, aes(price)) + 
+  geom_histogram(aes(fill=waterfront), color = "black") +
+  ggtitle("Distribution of price, by waterfront status")
+
+#keep all waterfront:
+df$waterfront <- as.factor(df$waterfront)
+waterfront <- df %>% 
+  filter(waterfront == "Waterfront")
+
+#sample 10% of non waterfront
+set.seed(2020)
+not.waterfront <- df %>% 
+  filter(waterfront == "Not waterfront")
+sample.nw <- sample_n(not.waterfront, size = ceiling(.1*nrow(df)))
+
+#create new df to include only what we're interested in
+subset.df <- df %>% 
+  dplyr::select(price:condition, effective_age)
+
+#create testing and training data
+index <- createDataPartition(subset.df$waterfront, p = .70, list = FALSE)
+train <- subset.df[index, ]
+test <- subset.df[-index, ]
+
+#build logit model; need to put dummy var back
+df$waterfront <- gsub("Not waterfront", "0", subset.df$waterfront)
+df$waterfront <- gsub("Waterfront", "1", subset.df$waterfront)
+
+##
+df$waterfront <- as.factor(df$waterfront)
+#need to look @ weights here
+logit.model <- glm(as.factor(waterfront) ~ ., family = binomial(), train)
+
+#suggests some of these variables are significant
+summary(logit.model)
+
+pred.prob <- predict(logit.model, test, type = "response")
+
+# Converting from probability to actual output
+train$pred.class <- ifelse(logit.model$fitted.values >= 0.5, "Waterfront", "Not Waterfront")
+
+test$pred.class <- ifelse(pred.prob >= 0.5, "Waterfront", "Not Waterfront")
+ 
+# Generating the classification table
+ctab_train <- table(train$waterfront, train$pred.class)
+ctab_train
+
+ctab_test <- table(test$waterfront, test$pred.class)
+ctab_test
+
+#check accuracy on training; add diagonals
+accuracy.train <- (ctab_train[1,1] + ctab_train[2,2])/(sum(ctab_train))
+cat("The accuracy on the training data is:", accuracy.train*100, "%")
+
+#now check testing accuracy
+accuracy.test <- (ctab_test[1,1] + ctab_test[2,2])/(sum(ctab_test))
+cat("The accuracy on the testing data is:", accuracy.test*100, "%")
+```
+
+Due to high imbalance, we must assign weights. Without weights, we can see that although accuracy is high, the classifier does a poor job of distinguishing if a property is waterfront or not (can be checked with cross validation later too)
 
 # References
 https://www.r-bloggers.com/outlier-detection-and-treatment-with-r/
@@ -305,6 +420,3 @@ https://www.displayr.com/how-to-create-a-correlation-matrix-in-r/
 https://rstatisticsblog.com/data-science-in-action/machine-learning/binary-logistic-regression-with-r/
 https://www.r-bloggers.com/dealing-with-unbalanced-data-in-machine-learning/
 https://www.statmethods.net/advstats/bootstrapping.html
-
-
-
