@@ -13,18 +13,33 @@ library(tidyverse)
 #note: this data is only for the contiguous US
 chipotle <- read.csv("chipotle_stores.csv")
 census <- read.csv("nst-est2019-alldata.csv")
-short.census <- read.csv("short_census.csv")
+short.census <- read.csv("short_census.csv") %>% 
+  select(-STATE)
 
 #convert address to character instead of string
 chipotle$address <- as.character(chipotle$address)
+short.census$state <- as.character(short.census$NAME)
 
-#save census to smaller df
-short.census <- census %>% 
-  select(STATE, NAME, CENSUS2010POP)
-write.csv(short.census, file = "short_census.csv")
+#use alphebatized to merge
+chip <- chipotle %>% 
+  group_by(state) %>% 
+  count()
 
-census
-chipotle
+chip$id <- 1:48
+short.census$id <- 1:48
+
+#rename col to merge
+#short.census$state <- as.character(short.census$STATE)
+
+#new merged df to use later
+chip <- chip %>% 
+  left_join(short.census, by = "id") %>% 
+  select(-c(state.x, state.y)) %>% 
+  select(id, n, NAME, CENSUS2010POP)
+
+#define a chipotle per 100k residents variable (CHIPOTLE PER 100K)
+chip$cpp <- chip %>% 
+  mutate("cpp" = CENSUS2010POP/100000)
 ```
 
 Links to data: https://www.kaggle.com/jeffreybraun/chipotle-locations
@@ -38,8 +53,6 @@ ggplot(chipotle, aes(y=latitude, x=longitude)) +
   labs(x = "Longitude", y = "Latitude", title = "Map of Chipotle Locations in USA") +     
   theme(panel.background = element_rect(fill = "lightgoldenrodyellow"), 
     plot.background = element_rect(fill = "coral3")) 
-
-
 ```
 
 ```{r Chipotle Locations by State and City}
@@ -50,7 +63,7 @@ chipotles.by.state <- chipotle %>%
   arrange(desc(n))
 chipotles.by.state
 
-# visualize it
+# visualize it in descending order
 ggplot(chipotles.by.state, aes(reorder(state, -n), n)) +
   geom_bar(stat = "identity", fill = "white", color = "red") +
   labs(x = "State", y = "Number of Chipotle Locations", title = "Number of Chipotle Locations by State") +
