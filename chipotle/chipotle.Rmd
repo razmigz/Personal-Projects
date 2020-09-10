@@ -37,9 +37,9 @@ chip <- chip %>%
   select(-c(state.x, state.y)) %>% 
   select(id, n, NAME, CENSUS2010POP)
 
-#define a chipotle per 100k residents variable (CHIPOTLE PER 100K)
-chip$cpp <- chip %>% 
-  mutate("cpp" = CENSUS2010POP/100000)
+#define a NUMBER OF CHIPOTLE LOCATIONS PER POPULATION VARIABLE
+chip <- chip %>% 
+  mutate("cpp" = (n/CENSUS2010POP) * 1000000)
 ```
 
 Links to data: https://www.kaggle.com/jeffreybraun/chipotle-locations
@@ -77,5 +77,25 @@ chipotles.by.city <- chipotle %>%
   arrange(desc(n))
 chipotles.by.city
 ```
+
+
+```{r Fit Simple Linear Regression}
+mod <- lm(n ~ cpp + CENSUS2010POP, data = chip)
+summary(mod)
+plot(mod)
+
+ggplot(chip, aes(y=mod$fitted.values, x=n)) +
+  geom_point() +
+  geom_smooth(method = "lm") +
+  labs(y = "Number of Chipotle Locations under our Model", x = "Number of Actual Chipotle Locations", title = "Fitted Number of Chipotle Locations vs. Actual")
+
+ggplot(chip, aes(mod$residuals)) +
+  geom_histogram(fill = "pink", color = "yellow") +
+  labs(y="Count", x="Residuals", title="Distribution of Residuals under our Model")
+``` 
+
+The model summary suggests that the two variables are significant in predicting the number of Chipotle Locations in a state.
+
+It looks like the normality assumption of the residuals holds since the histogram is roughly bell shaped. Additionally, it looks to be centered around 0 with some constant variance $\sigma$.
 
 
