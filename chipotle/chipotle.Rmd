@@ -1,0 +1,68 @@
+---
+title: "Chipotle"
+author: "Razmig Zeitounian"
+date: "9/8/2020"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+
+library(tidyverse)
+
+#note: this data is only for the contiguous US
+chipotle <- read.csv("chipotle_stores.csv")
+census <- read.csv("nst-est2019-alldata.csv")
+short.census <- read.csv("short_census.csv")
+
+#convert address to character instead of string
+chipotle$address <- as.character(chipotle$address)
+
+#save census to smaller df
+short.census <- census %>% 
+  select(STATE, NAME, CENSUS2010POP)
+write.csv(short.census, file = "short_census.csv")
+
+census
+chipotle
+```
+
+Links to data: https://www.kaggle.com/jeffreybraun/chipotle-locations
+https://www.census.gov/data/datasets/time-series/demo/popest/2010s-state-total.html
+
+
+```{r Map of Chipotle Locations}
+#make a map for chipotle locations
+ggplot(chipotle, aes(y=latitude, x=longitude)) +
+  geom_point(color = "steelblue1") +
+  labs(x = "Longitude", y = "Latitude", title = "Map of Chipotle Locations in USA") +     
+  theme(panel.background = element_rect(fill = "lightgoldenrodyellow"), 
+    plot.background = element_rect(fill = "coral3")) 
+
+
+```
+
+```{r Chipotle Locations by State and City}
+# See which states have the most Chipotle locations
+chipotles.by.state <- chipotle %>% 
+  group_by(state) %>% 
+  count() %>% 
+  arrange(desc(n))
+chipotles.by.state
+
+# visualize it
+ggplot(chipotles.by.state, aes(reorder(state, -n), n)) +
+  geom_bar(stat = "identity", fill = "white", color = "red") +
+  labs(x = "State", y = "Number of Chipotle Locations", title = "Number of Chipotle Locations by State") +
+  theme(axis.text.x = element_text(angle = 90, vjust = 0.5, hjust=1)) +
+  theme(plot.background = element_rect(fill = "chocolate1"))
+
+# See which cities have the most locations
+chipotles.by.city <- chipotle %>% 
+  group_by(location, state) %>% 
+  count() %>% 
+  arrange(desc(n))
+chipotles.by.city
+```
+
+
