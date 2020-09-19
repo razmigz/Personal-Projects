@@ -2,7 +2,9 @@
 title: "Chipotle"
 author: "Razmig Zeitounian"
 date: "9/8/2020"
-output: html_document
+output:
+  pdf_document: default
+  html_document: default
 ---
 
 ```{r setup, include=FALSE}
@@ -81,7 +83,18 @@ chipotles.by.city
 
 ```{r Fit Simple Linear Regression}
 mod <- lm(n ~ cpp + CENSUS2010POP, data = chip)
-summary(mod)
+mod.summary <- summary(mod)
+mod.summary
+
+cat("Our R^2 is", mod.summary$r.squared, ". This means", mod.summary$r.squared, "percent of variation in the number of Chipotle locations per state can be explained by our predictor variables (cpp and 2010 population).")
+
+numeric.data <- chip %>% 
+  select(n, CENSUS2010POP, cpp)
+#n and census2010 pop quite related
+cor(numeric.data)
+
+
+
 plot(mod)
 
 ggplot(chip, aes(y=mod$fitted.values, x=n)) +
