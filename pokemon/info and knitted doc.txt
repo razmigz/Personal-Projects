@@ -1,3 +1,2 @@
-
-This project does some EDA on Pokemon data and performs an ANOVA analysis on it
-See knitted version at https://rpubs.com/razmig_z/652647
+This project does some EDA on Pokemon data and performs an ANOVA (one-way) analysis on it.
+See knitted version at https://rpubs.com/razmig_z/652647 (it was too big to post here as a PDF).
